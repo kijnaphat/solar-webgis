@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Polygon, Popup, useMap, ImageOverlay, Polyline, Tooltip } from 'react-leaflet';
+// @ts-ignore
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
