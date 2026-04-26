@@ -2,10 +2,10 @@
 
 import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Polygon, Popup, useMap, ImageOverlay, Polyline, Tooltip } from 'react-leaflet';
-// @ts-ignore
-import L from 'leaflet';
+// 🌟 ลบ import L ออกเพราะไม่ได้ใช้ ช่วยให้ Vercel Build ผ่านฉลุย!
 import 'leaflet/dist/leaflet.css';
 
+// 🌟 ตัวแปลงพิกัดขั้นสูง: รองรับทั้ง GeoJSON, WKT และ Hex (PostGIS)
 const parseGeometry = (geom: any) => {
   if (!geom) return null;
   try {
@@ -79,14 +79,14 @@ interface MapProps {
 
 export default function MapComponent({ panels, overlayImage, imageBounds, baseMap, activeLayers }: MapProps) {
   const center: [number, number] = [13.85, 100.5];
+  
   const mapUrls: Record<string, string> = {
     satellite: "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
     street: "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
   };
 
-  // 🌟 ฟังก์ชันจัดกลุ่มสายไฟ (String Inverter Grouping)
-  // แบ่งแผงเป็นกลุ่มๆ ละ 8 แผง เพื่อจำลองการต่ออนุกรมเข้า Inverter
+  // 🌟 พล็อตเส้นสายไฟ (String Inverter Wiring)
   const stringSize = 8;
   const stringColors = ['#eab308', '#06b6d4', '#ec4899', '#a855f7', '#22c55e', '#f97316']; 
   const stringGroups: Record<number, [number, number][]> = {};
@@ -115,18 +115,18 @@ export default function MapComponent({ panels, overlayImage, imageBounds, baseMa
 
         {overlayImage && imageBounds && <ImageOverlay url={overlayImage} bounds={imageBounds} opacity={0.85} zIndex={10} />}
 
-        {/* 🌟 1. String Inverter Wiring (วาดเส้นเดินสายไฟ) */}
+        {/* 🌟 แสดงเส้นทางเดินสายไฟ String Inverter */}
         {activeLayers?.stringWiring && Object.entries(stringGroups).map(([stringId, coords]) => {
           const sId = parseInt(stringId);
           const color = stringColors[sId % stringColors.length];
           return (
             <Polyline key={`string-${sId}`} positions={coords} pathOptions={{ color: color, weight: 2.5, opacity: 0.9, className: 'wiring-path' }}>
-              <Tooltip sticky className="phase-tooltip">🔌 STRING #{sId + 1} (Array: {coords.length} units)</Tooltip>
+              <Tooltip sticky className="phase-tooltip">🔌 STRING #{sId + 1} ({coords.length} แผง)</Tooltip>
             </Polyline>
           );
         })}
 
-        {/* แผงโซลาร์เซลล์ */}
+        {/* วาดแผงโซลาร์เซลล์ (Polygons) */}
         {panels && panels.map((panel, index) => {
           if (!panel?.geom) return null;
           const positions = parseGeometry(panel.geom);
@@ -137,44 +137,34 @@ export default function MapComponent({ panels, overlayImage, imageBounds, baseMa
           let borderColor = confScore >= 0.50 ? '#00ff00' : '#fbbf24';
           let phaseLabel = "Standard Phase";
 
-          // 🌟 2. Priority Zoning Mode (การแบ่งเฟสลงทุน)
+          // การแบ่งเฟสการลงทุน (Priority Zoning)
           if (activeLayers?.priority) {
-            // สูตรประเมิน: พื้นที่ * ความแม่นยำ
             const score = panel.area_sqm * confScore;
-            if (score > 3.5) { // Phase 1: High Yield & High Confidence
-              fillColor = '#10b981'; borderColor = '#059669'; phaseLabel = "✅ PHASE 1: Immediate Action";
-            } else if (score > 1.5) { // Phase 2: Moderate
-              fillColor = '#3b82f6'; borderColor = '#2563eb'; phaseLabel = "▶️ PHASE 2: Standard Plan";
-            } else { // Phase 3: Low ROI / High Risk
-              fillColor = '#64748b'; borderColor = '#475569'; phaseLabel = "⏸️ PHASE 3: Low Priority/Review";
+            if (score > 3.5) {
+              fillColor = '#10b981'; borderColor = '#059669'; phaseLabel = "✅ PHASE 1: ลงทุนทันที";
+            } else if (score > 1.5) {
+              fillColor = '#3b82f6'; borderColor = '#2563eb'; phaseLabel = "▶️ PHASE 2: แผนสำรอง";
+            } else {
+              fillColor = '#64748b'; borderColor = '#475569'; phaseLabel = "⏸️ PHASE 3: ประเมินใหม่";
             }
           }
 
-          // 🌟 3. Heatmap Mode
+          // โหมด Heatmap ตามขนาดพื้นที่
           if (activeLayers?.heatmap) {
-            if (panel.area_sqm >= 6) { fillColor = '#ef4444'; borderColor = '#ff0000'; } 
-            else if (panel.area_sqm >= 4) { fillColor = '#f97316'; borderColor = '#fb923c'; } 
-            else if (panel.area_sqm >= 2) { fillColor = '#eab308'; borderColor = '#facc15'; } 
-            else { fillColor = '#3b82f6'; borderColor = '#60a5fa'; } 
+            fillColor = panel.area_sqm >= 6 ? '#ef4444' : panel.area_sqm >= 4 ? '#f97316' : panel.area_sqm >= 2 ? '#eab308' : '#3b82f6';
+            borderColor = fillColor;
           }
 
           return (
             <Polygon key={panel.id || index} positions={positions as any} pathOptions={{ color: borderColor, fillColor: fillColor, fillOpacity: activeLayers?.heatmap ? 0.7 : 0.6, weight: 2 }}>
               <Popup>
                 <div className="font-sans text-sm min-w-[180px]">
-                  <p className="font-bold text-slate-800 mb-2 border-b pb-1">📊 Engineering Data</p>
+                  <p className="font-bold text-slate-800 mb-2 border-b pb-1 text-center">📡 ข้อมูลเชิงพื้นที่</p>
                   <div className="space-y-1 text-slate-700">
-                    <p className="flex justify-between items-center">
-                      <span>รหัสติดตั้ง:</span> <span className="font-mono text-[10px] bg-slate-100 px-1 rounded border">PNL-{panel.id || index}</span>
-                    </p>
-                    {activeLayers?.priority && (
-                      <p className="flex justify-between text-xs font-bold text-indigo-600 mt-1 mb-1">
-                        {phaseLabel}
-                      </p>
-                    )}
-                    <p className="flex justify-between"><span>พื้นที่:</span> <span className="font-semibold text-blue-600">{panel.area_sqm} m²</span></p>
-                    <p className="flex justify-between"><span>ความมั่นใจ AI:</span> <span className="font-semibold text-purple-600">{(confScore * 100).toFixed(1)}%</span></p>
-                    <p className="flex justify-between"><span>ผลิตพลังงาน:</span> <span className="font-semibold text-emerald-600">{panel.yearly_energy_kwh?.toLocaleString()} kWh</span></p>
+                    <p className="flex justify-between"><span>รหัสแผง:</span> <span className="font-mono text-[10px]">PNL-{panel.id || index}</span></p>
+                    {activeLayers?.priority && <p className="text-[10px] font-bold text-indigo-600">{phaseLabel}</p>}
+                    <p className="flex justify-between"><span>พื้นที่:</span> <span className="font-semibold text-blue-600">{panel.area_sqm} ตร.ม.</span></p>
+                    <p className="flex justify-between"><span>AI มั่นใจ:</span> <span className="font-semibold text-purple-600">{(confScore * 100).toFixed(1)}%</span></p>
                   </div>
                 </div>
               </Popup>
