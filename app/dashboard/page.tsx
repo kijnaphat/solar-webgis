@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import {
@@ -132,6 +132,29 @@ export default function SolarWebGIS() {
   const [leftOpen, setLeftOpen]         = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  /* ── Edit-detection state ───────────────────────────── */
+  const [deletedIds,  setDeletedIds]  = useState<Set<string|number>>(new Set());
+  const [drawnPanels, setDrawnPanels] = useState<{ id:string; coords:[number,number][]; note:string; source:'manual' }[]>([]);
+  const [undoStack,   setUndoStack]   = useState<string[]>([]);
+
+  /* Undo helpers — shared with MapComponent via props */
+  const saveUndo = useCallback(() => {
+    setUndoStack(s => [...s.slice(-19), JSON.stringify({ deletedIds:[...deletedIds], drawnPanels })]);
+  }, [deletedIds, drawnPanels]);
+
+  const handleEditUndo = useCallback(() => {
+    setUndoStack(s => {
+      if (!s.length) return s;
+      const prev = JSON.parse(s[s.length-1]);
+      setDeletedIds(new Set(prev.deletedIds));
+      setDrawnPanels(prev.drawnPanels);
+      return s.slice(0,-1);
+    });
+  }, []);
+
+  /* visiblePanels = AI panels minus user-deleted ones */
+  const visiblePanels = panels.filter(p => !deletedIds.has(p.id));
+
   useEffect(() => {
     const t = setInterval(() => setIrradiance(Math.floor(790 + Math.random() * 200)), 2200);
     return () => clearInterval(t);
@@ -143,20 +166,21 @@ export default function SolarWebGIS() {
     return () => clearInterval(t);
   }, [isUploading]);
 
-  /* ── Stats ─────────────────────────────────────────── */
-  const n = panels.length;
-  const totalArea     = panels.reduce((a, c) => a + (c.area_sqm     || 0), 0);
-  const totalEnergy   = panels.reduce((a, c) => a + (c.yearly_energy_kwh   || 0), 0);
-  const totalSavings  = panels.reduce((a, c) => a + (c.yearly_savings_baht || 0), 0);
-  const totalCo2      = panels.reduce((a, c) => a + (c.co2_offset_kg       || 0), 0);
-  const avgConf       = n > 0 ? panels.reduce((a, c) => a + c.confidence_score, 0) / n : 0;
+  /* ── Stats — computed from visiblePanels so they update immediately
+       when the user deletes/draws panels ──────────────────────────── */
+  const n          = visiblePanels.length;
+  const totalArea     = visiblePanels.reduce((a, c) => a + (c.area_sqm     || 0), 0);
+  const totalEnergy   = visiblePanels.reduce((a, c) => a + (c.yearly_energy_kwh   || 0), 0);
+  const totalSavings  = visiblePanels.reduce((a, c) => a + (c.yearly_savings_baht || 0), 0);
+  const totalCo2      = visiblePanels.reduce((a, c) => a + (c.co2_offset_kg       || 0), 0);
+  const avgConf       = n > 0 ? visiblePanels.reduce((a, c) => a + c.confidence_score, 0) / n : 0;
   const avgArea       = n > 0 ? totalArea / n : 0;
-  const stdArea       = n > 1 ? Math.sqrt(panels.reduce((a, c) => a + Math.pow(c.area_sqm - avgArea, 2), 0) / n) : 0;
-  const maxArea       = n > 0 ? Math.max(...panels.map(p => p.area_sqm)) : 0;
-  const minConf       = n > 0 ? Math.min(...panels.map(p => p.confidence_score)) : 0;
-  const maxConf       = n > 0 ? Math.max(...panels.map(p => p.confidence_score)) : 0;
-  const centLat       = n > 0 ? panels.reduce((a, c) => a + c.centroid_lat, 0) / n : 13.85;
-  const centLon       = n > 0 ? panels.reduce((a, c) => a + c.centroid_lon, 0) / n : 100.5;
+  const stdArea       = n > 1 ? Math.sqrt(visiblePanels.reduce((a, c) => a + Math.pow(c.area_sqm - avgArea, 2), 0) / n) : 0;
+  const maxArea       = n > 0 ? Math.max(...visiblePanels.map(p => p.area_sqm)) : 0;
+  const minConf       = n > 0 ? Math.min(...visiblePanels.map(p => p.confidence_score)) : 0;
+  const maxConf       = n > 0 ? Math.max(...visiblePanels.map(p => p.confidence_score)) : 0;
+  const centLat       = n > 0 ? visiblePanels.reduce((a, c) => a + c.centroid_lat, 0) / n : 13.85;
+  const centLon       = n > 0 ? visiblePanels.reduce((a, c) => a + c.centroid_lon, 0) / n : 100.5;
   const systemKw      = totalArea * 0.2;
   const estCapex      = systemKw * 35_000;
   const breakEven     = totalSavings > 0 ? estCapex / totalSavings : 0;
@@ -165,8 +189,8 @@ export default function SolarWebGIS() {
   const moransI       = 0.74;
   const geoDisp       = n > 0 ? panels.reduce((a, c) => a + Math.abs(c.centroid_lat - centLat), 0) / n : 0;
   const betaAreaEnergy = totalArea > 0 ? totalEnergy / totalArea : 0;
-  const phase1        = panels.filter(p => p.area_sqm * p.confidence_score > 3.5).length;
-  const phase2        = panels.filter(p => { const s = p.area_sqm * p.confidence_score; return s > 1.5 && s <= 3.5; }).length;
+  const phase1        = visiblePanels.filter(p => p.area_sqm * p.confidence_score > 3.5).length;
+  const phase2        = visiblePanels.filter(p => { const s = p.area_sqm * p.confidence_score; return s > 1.5 && s <= 3.5; }).length;
   const phase3        = n - phase1 - phase2;
 
   /* ── Grade ──────────────────────────────────────────── */
@@ -179,22 +203,22 @@ export default function SolarWebGIS() {
 
   /* ── Chart data ─────────────────────────────────────── */
   const sizeBuckets = [
-    { name: '<2 m²', count: panels.filter(p => p.area_sqm < 2).length,                              fill: '#5ac8fa' },
-    { name: '2–4',   count: panels.filter(p => p.area_sqm >= 2 && p.area_sqm < 4).length,           fill: '#0071e3' },
-    { name: '4–6',   count: panels.filter(p => p.area_sqm >= 4 && p.area_sqm < 6).length,           fill: '#30d158' },
-    { name: '>6 m²', count: panels.filter(p => p.area_sqm >= 6).length,                             fill: '#ff9f0a' },
+    { name: '<2 m²', count: visiblePanels.filter(p => p.area_sqm < 2).length,                              fill: '#5ac8fa' },
+    { name: '2–4',   count: visiblePanels.filter(p => p.area_sqm >= 2 && p.area_sqm < 4).length,           fill: '#0071e3' },
+    { name: '4–6',   count: visiblePanels.filter(p => p.area_sqm >= 4 && p.area_sqm < 6).length,           fill: '#30d158' },
+    { name: '>6 m²', count: visiblePanels.filter(p => p.area_sqm >= 6).length,                             fill: '#ff9f0a' },
   ];
 
   const confHistogram = Array.from({ length: 10 }, (_, i) => {
     const lo = i * 0.1, hi = lo + 0.1;
     return {
       bin: `${(lo * 100).toFixed(0)}`,
-      count: panels.filter(p => p.confidence_score >= lo && (i < 9 ? p.confidence_score < hi : true)).length,
+      count: visiblePanels.filter(p => p.confidence_score >= lo && (i < 9 ? p.confidence_score < hi : true)).length,
       fill: lo >= 0.7 ? '#30d158' : lo >= 0.5 ? '#0071e3' : '#ff9f0a',
     };
   });
 
-  const scatterData = panels.map(p => ({
+  const scatterData = visiblePanels.map(p => ({
     x: parseFloat(p.area_sqm.toFixed(2)),
     y: parseFloat((p.confidence_score * 100).toFixed(1)),
     z: p.yearly_energy_kwh,
@@ -202,16 +226,16 @@ export default function SolarWebGIS() {
   }));
 
   const quadrants = [
-    { name: 'NW', count: panels.filter(p => p.centroid_lat > centLat && p.centroid_lon < centLon).length, fill: '#0071e3' },
-    { name: 'NE', count: panels.filter(p => p.centroid_lat > centLat && p.centroid_lon >= centLon).length, fill: '#30d158' },
-    { name: 'SW', count: panels.filter(p => p.centroid_lat <= centLat && p.centroid_lon < centLon).length, fill: '#ff9f0a' },
-    { name: 'SE', count: panels.filter(p => p.centroid_lat <= centLat && p.centroid_lon >= centLon).length, fill: '#bf5af2' },
+    { name: 'NW', count: visiblePanels.filter(p => p.centroid_lat > centLat && p.centroid_lon < centLon).length, fill: '#0071e3' },
+    { name: 'NE', count: visiblePanels.filter(p => p.centroid_lat > centLat && p.centroid_lon >= centLon).length, fill: '#30d158' },
+    { name: 'SW', count: visiblePanels.filter(p => p.centroid_lat <= centLat && p.centroid_lon < centLon).length, fill: '#ff9f0a' },
+    { name: 'SE', count: visiblePanels.filter(p => p.centroid_lat <= centLat && p.centroid_lon >= centLon).length, fill: '#bf5af2' },
   ];
 
   // Simulated KDE — smooth density over area bins
   const kdeBins = Array.from({ length: 20 }, (_, i) => {
     const x = (i + 0.5) * (maxArea > 0 ? maxArea : 10) / 20;
-    const density = panels.reduce((sum, p) => {
+    const density = visiblePanels.reduce((sum, p) => {
       const h = stdArea > 0 ? stdArea : 1;
       return sum + Math.exp(-0.5 * Math.pow((x - p.area_sqm) / h, 2)) / (h * Math.sqrt(2 * Math.PI));
     }, 0) / Math.max(n, 1);
@@ -219,7 +243,7 @@ export default function SolarWebGIS() {
   });
 
   // Area–Energy regression points + regression line
-  const regressionData = panels.slice(0, 40).map(p => ({ x: p.area_sqm, y: p.yearly_energy_kwh }));
+  const regressionData = visiblePanels.slice(0, 40).map(p => ({ x: p.area_sqm, y: p.yearly_energy_kwh }));
   const regLineData = maxArea > 0
     ? [{ x: 0, y: 0 }, { x: maxArea, y: maxArea * betaAreaEnergy }]
     : [{ x: 0, y: 0 }, { x: 10, y: 10 * betaAreaEnergy }];
@@ -414,7 +438,24 @@ export default function SolarWebGIS() {
 
           {/* MAP background */}
           <div className="map-wrap" style={{ zIndex: 0 }}>
-            <MapComponent panels={panels} overlayImage={overlayImage} imageBounds={imageBounds} baseMap={baseMap} activeLayers={activeLayers} />
+            <MapComponent
+              panels={panels}
+              overlayImage={overlayImage}
+              imageBounds={imageBounds}
+              baseMap={baseMap}
+              activeLayers={activeLayers}
+              deletedIds={deletedIds}
+              drawnPanels={drawnPanels}
+              undoStack={undoStack}
+              onDelete={(id: string|number) => { saveUndo(); setDeletedIds(s => new Set([...s, id])); }}
+              onCompleteDraw={(coords: [number,number][]) => {
+                saveUndo();
+                setDrawnPanels(d => [...d, { id:`manual-${Date.now()}`, coords, note:'', source:'manual' as const }]);
+              }}
+              onDeleteDrawn={(id: string) => { saveUndo(); setDrawnPanels(d => d.filter(p => p.id !== id)); }}
+              onUndo={handleEditUndo}
+              onResetEdits={() => { saveUndo(); setDeletedIds(new Set()); setDrawnPanels([]); }}
+            />
           </div>
 
           {/* subtle vignette */}
@@ -769,8 +810,8 @@ export default function SolarWebGIS() {
                           <YAxis type="number" dataKey="y" name="Lat" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
                           <ZAxis type="number" dataKey="z" range={[28, 120]} />
                           <Tooltip {...TT} />
-                          <Scatter data={panels.map(p => ({ x: p.centroid_lon, y: p.centroid_lat, z: p.area_sqm }))}>
-                            {panels.map((p, i) => <Cell key={i} fill={p.confidence_score >= 0.5 ? '#0071e3' : '#ff9f0a'} opacity={0.75} />)}
+                          <Scatter data={visiblePanels.map(p => ({ x: p.centroid_lon, y: p.centroid_lat, z: p.area_sqm }))}>
+                            {visiblePanels.map((p, i) => <Cell key={i} fill={p.confidence_score >= 0.5 ? '#0071e3' : '#ff9f0a'} opacity={0.75} />)}
                           </Scatter>
                         </ScatterChart>
                       </ResponsiveContainer>
@@ -894,7 +935,7 @@ export default function SolarWebGIS() {
 
                   {/* Percentile rank */}
                   <ChartCard title="Percentile Rank — Top Panels by Energy Yield" sub="Panels ranked by yearly_energy_kwh descending. P-rank shown." color="#ff9f0a">
-                    {panels.slice(0, 8).map((p, i) => {
+                    {visiblePanels.slice(0, 8).map((p, i) => {
                       const pRank = n > 1 ? ((n - 1 - i) / (n - 1) * 100).toFixed(0) : '100';
                       return (
                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
@@ -1103,7 +1144,7 @@ export default function SolarWebGIS() {
                     </div>
                   </div>
 
-                  {panels.slice(0, 20).map((p, i) => (
+                  {visiblePanels.slice(0, 20).map((p, i) => (
                     <div key={i} style={{
                       display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
                       background: '#fff', border: '1px solid var(--border)', borderRadius: 12,
