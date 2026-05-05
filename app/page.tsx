@@ -1,1181 +1,1407 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import Link from 'next/link';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { supabase } from '@/lib/supabase';
 import {
-  Map, ArrowRight, Zap, Leaf, Satellite, Database, Layers,
-  BrainCircuit, Building2, Landmark, SunMedium, ChevronRight,
-  TrendingUp, Target, ShieldCheck, Cpu, BarChart3, CheckCircle2,
-  ScanSearch, Star, TreePine, Car, DollarSign, Wind, Plus, Minus,
-  Globe2, Award, Clock, Sparkles, Download, Eye, Zap as ZapIcon,
-  MousePointer, Activity, GitBranch, LayoutGrid, FileJson, Workflow
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  ScatterChart, Scatter, ZAxis, AreaChart, Area,
+  LineChart, Line, CartesianGrid, ReferenceLine,
+  RadarChart as RechartsRadar, Radar as RadarShape,
+  PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  Cell, ComposedChart, PieChart, Pie,
+} from 'recharts';
+import {
+  Zap, Leaf, DollarSign, Activity, UploadCloud, Trash2,
+  Map as MapIcon, Layers, Terminal, BarChart3, Globe2, Crosshair,
+  Cpu, ShieldCheck, Award, TrendingUp, CloudSun, DownloadCloud,
+  Timer, Network, ListChecks, Cable, ChevronRight, ScanLine,
+  GitBranch, Sigma, FlaskConical, TreePine, Car, Database,
+  Target, CheckCircle2, Info, Radar, LayoutGrid, Wind,
+  PenLine, RotateCcw, Download, Eraser,
 } from 'lucide-react';
 
-/* ═══════════════════════════════════════
-   HOOKS
-═══════════════════════════════════════ */
-function useScroll() {
-  const [y, setY] = useState(0);
-  useEffect(() => {
-    const h = () => setY(window.scrollY);
-    window.addEventListener('scroll', h, { passive: true });
-    return () => window.removeEventListener('scroll', h);
-  }, []);
-  return y;
+const MapComponent = dynamic(() => import('./Map'), { ssr: false });
+
+/* ── Types ─────────────────────────────────────────────── */
+interface SolarPanel {
+  id: number; geom: string; area_sqm: number;
+  daily_energy_kwh: number; yearly_energy_kwh: number;
+  yearly_savings_baht: number; co2_offset_kg: number;
+  confidence_score: number; centroid_lat: number; centroid_lon: number;
 }
 
-function useInView(opts = {}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [vis, setVis] = useState(false);
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) { setVis(true); obs.disconnect(); }
-    }, { threshold: 0.12, ...opts });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, []);
-  return { ref, vis };
-}
-
-/* ═══════════════════════════════════════
-   PRIMITIVES
-═══════════════════════════════════════ */
-
-function Reveal({
-  children, delay = 0, y = 28, scale = false, className = '', style
-}: {
-  children: React.ReactNode; delay?: number; y?: number; scale?: boolean; className?: string; style?: React.CSSProperties;
-}) {
-  const { ref, vis } = useInView();
+/* ── Mini Components ────────────────────────────────────── */
+function Toggle({ on, color = '#0071e3', onToggle }: { on: boolean; color?: string; onToggle: () => void }) {
   return (
-    <div ref={ref} className={className} style={{
-      ...style,
-      opacity: vis ? 1 : 0,
-      transform: vis
-        ? 'none'
-        : `translateY(${y}px)${scale ? ' scale(0.96)' : ''}`,
-      transition: `opacity 1s cubic-bezier(0.16,1,0.3,1) ${delay}ms, transform 1s cubic-bezier(0.16,1,0.3,1) ${delay}ms`,
-    }}>{children}</div>
+    <button onClick={onToggle} style={{
+      width: 38, height: 22, borderRadius: 11, position: 'relative',
+      border: 'none', cursor: 'pointer', flexShrink: 0,
+      background: on ? color : '#e5e5ea', transition: 'background .25s',
+    }}>
+      <span style={{
+        position: 'absolute', top: 3, left: on ? 19 : 3,
+        width: 16, height: 16, borderRadius: '50%', background: '#fff',
+        transition: 'left .22s cubic-bezier(0.16,1,0.3,1)',
+        boxShadow: '0 1px 4px rgba(0,0,0,.18)',
+      }} />
+    </button>
   );
 }
 
-function Count({ to, suffix = '', prefix = '', decimals = 0 }: {
-  to: number; suffix?: string; prefix?: string; decimals?: number;
-}) {
-  const [n, setN] = useState(0);
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => {
-      if (!e.isIntersecting) return;
-      obs.disconnect();
-      let v = 0; const step = to / 60;
-      const t = setInterval(() => {
-        v += step; if (v >= to) { setN(to); clearInterval(t); } else setN(v);
-      }, 16);
-    }, { threshold: 0.5 });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [to]);
-  return <span ref={ref}>{prefix}{decimals > 0 ? n.toFixed(decimals) : Math.floor(n).toLocaleString()}{suffix}</span>;
-}
-
-function Chip({ children, color = '#0071e3', bg }: { children: React.ReactNode; color?: string; bg?: string }) {
+function Lozenge({ children, color = '#0071e3' }: { children: React.ReactNode; color?: string }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '5px 13px', borderRadius: 980,
-      background: bg || `${color}0d`,
-      border: `1px solid ${color}25`,
-      fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500,
-      letterSpacing: '0.13em', textTransform: 'uppercase' as const, color,
+      padding: '3px 10px', borderRadius: 980,
+      background: `${color}0d`, border: `1px solid ${color}20`,
+      fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 500,
+      letterSpacing: '.13em', textTransform: 'uppercase' as const, color,
     }}>{children}</span>
   );
 }
 
-function LiveBadge() {
+function Kpi({ label, value, sub, color = '#1d1d1f', accent = '#0071e3' }: {
+  label: string; value: string | number; sub?: string; color?: string; accent?: string;
+}) {
   return (
-    <Chip color="#1d8348" bg="#eafaf1">
-      <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#1d8348', animation: 'pulse 2s infinite', display: 'inline-block' }} />
-      System Live
-    </Chip>
-  );
-}
-
-function Divider() {
-  return <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #d2d2d7 20%, #d2d2d7 80%, transparent)' }} />;
-}
-
-function Faq({ q, a }: { q: string; a: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{ borderBottom: '1px solid #e5e5e7' }}>
-      <button onClick={() => setOpen(o => !o)} style={{
-        width: '100%', display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center', padding: '22px 0', background: 'none',
-        border: 'none', cursor: 'pointer', textAlign: 'left', gap: 20,
-      }}>
-        <span style={{ fontFamily: 'var(--sans)', fontSize: 17, fontWeight: 500, color: '#1d1d1f', lineHeight: 1.4 }}>{q}</span>
-        <span style={{
-          width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-          background: open ? '#1d1d1f' : '#f5f5f7',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'background 0.2s',
-        }}>
-          {open ? <Minus style={{ width: 12, height: 12, color: '#fff' }} />
-                : <Plus  style={{ width: 12, height: 12, color: '#6e6e73' }} />}
-        </span>
-      </button>
-      <div style={{ maxHeight: open ? 320 : 0, overflow: 'hidden', transition: 'max-height 0.45s ease' }}>
-        <p style={{ fontFamily: 'var(--sans)', fontSize: 15, color: '#6e6e73', lineHeight: 1.8, paddingBottom: 22 }}>{a}</p>
-      </div>
+    <div style={{
+      padding: '14px 16px',
+      background: '#fff', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14,
+      transition: 'box-shadow .2s',
+    }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: '#6e6e73', letterSpacing: '.18em', textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--display)', fontSize: 24, fontWeight: 900, letterSpacing: '-.03em', color, lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#a0a0a0', marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
 
-/* ═══════════════════════════════════════
-   PAGE
-═══════════════════════════════════════ */
-export default function HomePage() {
-  const scrollY = useScroll();
-  const [hovered, setHovered] = useState<number | null>(null);
+function ChartCard({ title, sub, color = '#0071e3', children }: {
+  title: string; sub?: string; color?: string; children: React.ReactNode;
+}) {
+  return (
+    <div style={{
+      background: '#fff', border: '1px solid rgba(0,0,0,0.07)',
+      borderRadius: 16, padding: 16, overflow: 'hidden',
+    }}>
+      <div style={{ marginBottom: sub ? 4 : 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 14, height: 1.5, background: color, borderRadius: 1 }} />
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color }}>{title}</span>
+        </div>
+        {sub && <p style={{ fontFamily: 'var(--sans)', fontSize: 11, color: '#6e6e73', marginTop: 4, marginLeft: 22, lineHeight: 1.5 }}>{sub}</p>}
+      </div>
+      {children}
+    </div>
+  );
+}
 
+function PingDot({ color = '#1d8348' }: { color?: string }) {
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', width: 8, height: 8, flexShrink: 0 }}>
+      <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: color, animation: 'dashPing 1.8s ease-in-out infinite', opacity: .7 }} />
+      <span style={{ position: 'relative', width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />
+    </span>
+  );
+}
+
+// Shared tooltip style matching the white theme
+const TT = {
+  contentStyle: {
+    background: '#ffffff', border: '1px solid rgba(0,0,0,0.09)',
+    borderRadius: 12, fontFamily: 'var(--mono)', fontSize: 11,
+    boxShadow: '0 4px 24px rgba(0,0,0,0.1)', color: '#1d1d1f',
+  },
+};
+
+/* ════════════════════════════════════════════════════════
+   MAIN DASHBOARD
+════════════════════════════════════════════════════════ */
+export default function SolarWebGIS() {
+  const [panels, setPanels]             = useState<SolarPanel[]>([]);
+  const [file, setFile]                 = useState<File | null>(null);
+  const [isUploading, setIsUploading]   = useState(false);
+  const [scanMessage, setScanMessage]   = useState('');
+  const [uploadPct, setUploadPct]       = useState(0);
+  const [overlayImage, setOverlayImage] = useState<string | null>(null);
+  const [imageBounds, setImageBounds]   = useState<[[number,number],[number,number]]|null>(null);
+  const [baseMap, setBaseMap]           = useState('satellite');
+  const [activeTab, setActiveTab]       = useState('overview');
+  const [activeLayers, setActiveLayers] = useState({ heatmap: false, stringWiring: true, priority: false });
+  const [irradiance, setIrradiance]     = useState(850);
+  const [leftOpen, setLeftOpen]         = useState(true);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  /* ── Edit Detection state ───────────────────────────── */
+  const [editMode,    setEditMode]    = useState(false);
+  const [drawMode,    setDrawMode]    = useState(false);
+  const [deletedIds,  setDeletedIds]  = useState<Set<string|number>>(new Set());
+  const [drawnPanels, setDrawnPanels] = useState<Array<{id:string;coords:[number,number][];note:string;source:'manual'}>>([]);
+  const [undoStack,   setUndoStack]   = useState<string[]>([]);
+
+  const saveUndo = useCallback(() => {
+    setUndoStack(s => [...s.slice(-19), JSON.stringify({ deletedIds:[...deletedIds], drawnPanels })]);
+  }, [deletedIds, drawnPanels]);
+
+  const handleEditUndo = useCallback(() => {
+    setUndoStack(s => {
+      if (!s.length) return s;
+      const prev = JSON.parse(s[s.length-1]);
+      setDeletedIds(new Set(prev.deletedIds));
+      setDrawnPanels(prev.drawnPanels);
+      return s.slice(0,-1);
+    });
+  }, []);
+
+  const handleEditReset = useCallback(() => {
+    if (!confirm(`Reset all edits? (${deletedIds.size} deletions + ${drawnPanels.length} manual panels)`)) return;
+    saveUndo();
+    setDeletedIds(new Set());
+    setDrawnPanels([]);
+  }, [deletedIds, drawnPanels, saveUndo]);
+
+  const handleExportEdited = useCallback(() => {
+    const surviving = panels.filter(p => !deletedIds.has(p.id));
+    const features = [
+      ...surviving.map(p => ({
+        type:'Feature',
+        properties:{ id:p.id, source:'ai', area_sqm:p.area_sqm, confidence:p.confidence_score },
+        geometry:{ type:'Point', coordinates:[p.centroid_lon, p.centroid_lat] },
+      })),
+      ...drawnPanels.map(p => ({
+        type:'Feature',
+        properties:{ id:p.id, source:'manual' },
+        geometry:{ type:'Polygon', coordinates:[[...p.coords.map(([lat,lon])=>[lon,lat]), [p.coords[0][1],p.coords[0][0]]]] },
+      })),
+    ];
+    const a = document.createElement('a');
+    a.href = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify({ type:'FeatureCollection', features }, null, 2));
+    a.download = `solar_edited_${Date.now()}.geojson`;
+    document.body.appendChild(a); a.click(); a.remove();
+  }, [panels, deletedIds, drawnPanels]);
+
+  const hasEdits    = deletedIds.size > 0 || drawnPanels.length > 0;
+  const activeCount = panels.length - deletedIds.size;
+
+  useEffect(() => {
+    const t = setInterval(() => setIrradiance(Math.floor(790 + Math.random() * 200)), 2200);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (!isUploading) { setUploadPct(0); return; }
+    const t = setInterval(() => setUploadPct(p => Math.min(p + Math.random() * 8, 91)), 900);
+    return () => clearInterval(t);
+  }, [isUploading]);
+
+  /* ── Stats ─────────────────────────────────────────── */
+  const n = panels.length;
+  const totalArea     = panels.reduce((a, c) => a + (c.area_sqm     || 0), 0);
+  const totalEnergy   = panels.reduce((a, c) => a + (c.yearly_energy_kwh   || 0), 0);
+  const totalSavings  = panels.reduce((a, c) => a + (c.yearly_savings_baht || 0), 0);
+  const totalCo2      = panels.reduce((a, c) => a + (c.co2_offset_kg       || 0), 0);
+  const avgConf       = n > 0 ? panels.reduce((a, c) => a + c.confidence_score, 0) / n : 0;
+  const avgArea       = n > 0 ? totalArea / n : 0;
+  const stdArea       = n > 1 ? Math.sqrt(panels.reduce((a, c) => a + Math.pow(c.area_sqm - avgArea, 2), 0) / n) : 0;
+  const maxArea       = n > 0 ? Math.max(...panels.map(p => p.area_sqm)) : 0;
+  const minConf       = n > 0 ? Math.min(...panels.map(p => p.confidence_score)) : 0;
+  const maxConf       = n > 0 ? Math.max(...panels.map(p => p.confidence_score)) : 0;
+  const centLat       = n > 0 ? panels.reduce((a, c) => a + c.centroid_lat, 0) / n : 13.85;
+  const centLon       = n > 0 ? panels.reduce((a, c) => a + c.centroid_lon, 0) / n : 100.5;
+  const systemKw      = totalArea * 0.2;
+  const estCapex      = systemKw * 35_000;
+  const breakEven     = totalSavings > 0 ? estCapex / totalSavings : 0;
+  const irr           = breakEven > 0 ? (100 / breakEven).toFixed(1) : '—';
+  const cctValue      = totalCo2 * 0.15;
+  const moransI       = 0.74;
+  const geoDisp       = n > 0 ? panels.reduce((a, c) => a + Math.abs(c.centroid_lat - centLat), 0) / n : 0;
+  const betaAreaEnergy = totalArea > 0 ? totalEnergy / totalArea : 0;
+  const phase1        = panels.filter(p => p.area_sqm * p.confidence_score > 3.5).length;
+  const phase2        = panels.filter(p => { const s = p.area_sqm * p.confidence_score; return s > 1.5 && s <= 3.5; }).length;
+  const phase3        = n - phase1 - phase2;
+
+  /* ── Grade ──────────────────────────────────────────── */
+  const grade = (() => {
+    if (!n) return { g: '—', c: '#6e6e73', desc: 'Awaiting Data', bg: 'rgba(110,110,115,0.07)' };
+    if (avgConf >= 0.5 && totalArea > 30) return { g: 'A+', c: '#1d8348', desc: 'Highly Suitable', bg: 'rgba(29,131,72,0.07)' };
+    if (avgConf >= 0.4 && totalArea > 15) return { g: 'B',  c: '#0071e3', desc: 'Moderate',        bg: 'rgba(0,113,227,0.07)'  };
+    return { g: 'C', c: '#d48806', desc: 'Low Potential', bg: 'rgba(212,136,6,0.07)' };
+  })();
+
+  /* ── Chart data ─────────────────────────────────────── */
+  const sizeBuckets = [
+    { name: '<2 m²', count: panels.filter(p => p.area_sqm < 2).length,                              fill: '#5ac8fa' },
+    { name: '2–4',   count: panels.filter(p => p.area_sqm >= 2 && p.area_sqm < 4).length,           fill: '#0071e3' },
+    { name: '4–6',   count: panels.filter(p => p.area_sqm >= 4 && p.area_sqm < 6).length,           fill: '#30d158' },
+    { name: '>6 m²', count: panels.filter(p => p.area_sqm >= 6).length,                             fill: '#ff9f0a' },
+  ];
+
+  const confHistogram = Array.from({ length: 10 }, (_, i) => {
+    const lo = i * 0.1, hi = lo + 0.1;
+    return {
+      bin: `${(lo * 100).toFixed(0)}`,
+      count: panels.filter(p => p.confidence_score >= lo && (i < 9 ? p.confidence_score < hi : true)).length,
+      fill: lo >= 0.7 ? '#30d158' : lo >= 0.5 ? '#0071e3' : '#ff9f0a',
+    };
+  });
+
+  const scatterData = panels.map(p => ({
+    x: parseFloat(p.area_sqm.toFixed(2)),
+    y: parseFloat((p.confidence_score * 100).toFixed(1)),
+    z: p.yearly_energy_kwh,
+    cluster: p.area_sqm > 5 ? 'High-Yield' : p.confidence_score > 0.6 ? 'Efficient' : 'Standard',
+  }));
+
+  const quadrants = [
+    { name: 'NW', count: panels.filter(p => p.centroid_lat > centLat && p.centroid_lon < centLon).length, fill: '#0071e3' },
+    { name: 'NE', count: panels.filter(p => p.centroid_lat > centLat && p.centroid_lon >= centLon).length, fill: '#30d158' },
+    { name: 'SW', count: panels.filter(p => p.centroid_lat <= centLat && p.centroid_lon < centLon).length, fill: '#ff9f0a' },
+    { name: 'SE', count: panels.filter(p => p.centroid_lat <= centLat && p.centroid_lon >= centLon).length, fill: '#bf5af2' },
+  ];
+
+  // Simulated KDE — smooth density over area bins
+  const kdeBins = Array.from({ length: 20 }, (_, i) => {
+    const x = (i + 0.5) * (maxArea > 0 ? maxArea : 10) / 20;
+    const density = panels.reduce((sum, p) => {
+      const h = stdArea > 0 ? stdArea : 1;
+      return sum + Math.exp(-0.5 * Math.pow((x - p.area_sqm) / h, 2)) / (h * Math.sqrt(2 * Math.PI));
+    }, 0) / Math.max(n, 1);
+    return { x: x.toFixed(2), density: parseFloat(density.toFixed(4)) };
+  });
+
+  // Area–Energy regression points + regression line
+  const regressionData = panels.slice(0, 40).map(p => ({ x: p.area_sqm, y: p.yearly_energy_kwh }));
+  const regLineData = maxArea > 0
+    ? [{ x: 0, y: 0 }, { x: maxArea, y: maxArea * betaAreaEnergy }]
+    : [{ x: 0, y: 0 }, { x: 10, y: 10 * betaAreaEnergy }];
+
+  const dailyCurve = [
+    { t: '06:00', kwh: n > 0 ? 4 : 0,                          irr: 110 },
+    { t: '08:00', kwh: n > 0 ? totalEnergy * 0.09 : 0,         irr: 450 },
+    { t: '10:00', kwh: n > 0 ? totalEnergy * 0.22 : 0,         irr: 750 },
+    { t: '12:00', kwh: n > 0 ? totalEnergy * 0.35 : 0,         irr: 980 },
+    { t: '14:00', kwh: n > 0 ? totalEnergy * 0.26 : 0,         irr: 860 },
+    { t: '16:00', kwh: n > 0 ? totalEnergy * 0.13 : 0,         irr: 530 },
+    { t: '18:00', kwh: n > 0 ? 6 : 0,                          irr: 75  },
+  ];
+
+  const financialCurve = Array.from({ length: 26 }, (_, i) => ({
+    yr: `Y${i}`,
+    net:  Math.round(totalSavings * i - systemKw * 500 * i - estCapex),
+    cumRev: Math.round(totalSavings * i),
+  }));
+
+  const histData = Array.from({ length: 22 }, (_, i) => ({
+    px: Math.round(i * 11.6),
+    orig:  Math.max(0, 100 - Math.pow(i - 5, 2) * 2   + Math.random() * 9),
+    clahe: Math.max(0,  80 - Math.pow(i - 11, 2) * 1.4 + Math.random() * 18),
+  }));
+
+  const dipMetrics = [
+    { subject: 'Precision', A: 92 }, { subject: 'Recall', A: 88 },
+    { subject: 'mAP@0.5',  A: 94 }, { subject: 'IoU',    A: 85 },
+    { subject: 'Pixel Acc',A: 96 },
+  ];
+
+  /* ── Fetch / actions ────────────────────────────────── */
+  const fetchData = async () => {
+    try {
+      const { data, error } = await supabase.from('solar_panels_analytics').select('*').order('area_sqm', { ascending: false });
+      if (error) throw error;
+      if (data) setPanels(data as SolarPanel[]);
+    } catch (e: any) { console.error(e.message); }
+  };
+  useEffect(() => { fetchData(); }, []);
+
+  const handleUpload = async () => {
+    if (!file) return;
+    setIsUploading(true);
+    const msgs = [
+      'Initiating neural pipeline…', '[DIP] Applying CLAHE equalisation…',
+      '[DIP] Extracting deep features…', 'Running YOLOv8-Geo inference…',
+      '[GIS] Mapping inverter wiring paths…', 'Calculating investment priorities…',
+    ];
+    let idx = 0; setScanMessage(msgs[0]);
+    const iv = setInterval(() => { idx = (idx + 1) % msgs.length; setScanMessage(msgs[idx]); }, 1200);
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const res  = await fetch('https://kijnaphat-geoai-solar-api.hf.space/upload-solar-image/', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.status === 'success') {
+        if (data.base64_image) setOverlayImage(data.base64_image);
+        setImageBounds(data.image_bounds);
+        setFile(null); fetchData();
+      } else alert('AI Error: ' + data.message);
+    } catch { alert('Connection error — cannot reach inference server.'); }
+    finally { clearInterval(iv); setIsUploading(false); setScanMessage(''); setUploadPct(100); }
+  };
+
+  const handleClear = async () => {
+    if (!confirm('Clear all spatial and financial data?')) return;
+    await supabase.from('solar_panels_analytics').delete().neq('id', 0);
+    setOverlayImage(null); setImageBounds(null); fetchData();
+  };
+
+  const downloadGeoJSON = () => {
+    if (!panels.length) return alert('No spatial data to export.');
+    const gj = {
+      type: 'FeatureCollection', name: 'SWU_Solar_Panels',
+      crs: { type: 'name', properties: { name: 'urn:ogc:def:crs:OGC:1.3:CRS84' } },
+      features: panels.map(p => ({
+        type: 'Feature',
+        properties: { id: p.id, area_sqm: p.area_sqm, energy_kwh_yr: p.yearly_energy_kwh, ai_confidence: p.confidence_score },
+        geometry: { type: 'Point', coordinates: [p.centroid_lon, p.centroid_lat] },
+      })),
+    };
+    const a = document.createElement('a');
+    a.href = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(gj, null, 2));
+    a.download = 'swu_solar_spatial.geojson';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  const TABS = [
+    { id: 'overview',  icon: <Globe2         style={{ width: 13, height: 13 }} />, label: 'Overview'  },
+    { id: 'geostat',   icon: <Sigma          style={{ width: 13, height: 13 }} />, label: 'Geo Stats' },
+    { id: 'clustering',icon: <LayoutGrid     style={{ width: 13, height: 13 }} />, label: 'Clustering'},
+    { id: 'analytics', icon: <BarChart3      style={{ width: 13, height: 13 }} />, label: 'Data Sci'  },
+    { id: 'dip',       icon: <FlaskConical   style={{ width: 13, height: 13 }} />, label: 'DIP Lab'   },
+    { id: 'financials',icon: <TrendingUp     style={{ width: 13, height: 13 }} />, label: 'Finance'   },
+    { id: 'logs',      icon: <Terminal       style={{ width: 13, height: 13 }} />, label: 'Geo Logs'  },
+  ];
+
+  /* ════════════════════════════════════════════════════
+     RENDER
+  ════════════════════════════════════════════════════ */
   return (
     <>
-      {/* ── Global Styles ─────────────────────────────── */}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
-
+        @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
         :root {
-          --display: 'Bricolage Grotesque', -apple-system, sans-serif;
-          --sans:    'Geist', -apple-system, sans-serif;
+          --display: 'Bricolage Grotesque', sans-serif;
+          --sans:    'Geist', sans-serif;
           --mono:    'Geist Mono', monospace;
-          --blue:    #0071e3;
-          --blue-d:  #0062c6;
-          --green:   #1d8348;
-          --green-l: #eafaf1;
-          --ink:     #1d1d1f;
-          --sub:     #6e6e73;
-          --border:  #d2d2d7;
-          --bg:      #ffffff;
-          --bg2:     #f5f5f7;
-          --bg3:     #fbfbfd;
-          --r16:     16px;
-          --r20:     20px;
-          --r28:     28px;
+          --blue:    #0071e3;  --blue-l: rgba(0,113,227,0.08);
+          --green:   #1d8348;  --green-l: rgba(29,131,72,0.08);
+          --ink:     #1d1d1f;  --sub:  #6e6e73;
+          --border:  rgba(0,0,0,0.08); --border2: rgba(0,0,0,0.05);
+          --bg:      #f5f5f7;  --surface: #ffffff;
         }
+        *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; }
 
-        *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
-        html { scroll-behavior:smooth; -webkit-font-smoothing:antialiased; }
-        body { background:var(--bg); color:var(--ink); font-family:var(--sans); overflow-x:hidden; }
-        ::selection { background:rgba(0,113,227,.14); }
-        a { text-decoration:none; color:inherit; }
+        @keyframes dashPing { 0%,100%{transform:scale(1);opacity:.7} 50%{transform:scale(1.8);opacity:0} }
+        @keyframes spinSlow { to{transform:rotate(360deg)} }
+        @keyframes scanLine { 0%{top:-2px} 100%{top:102%} }
+        @keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:.3} }
+        @keyframes fadeSlide { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
 
-        @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:.35} }
-        @keyframes spin    { to{transform:rotate(360deg)} }
-        @keyframes scanL   { 0%{top:-2px} 100%{top:102%} }
-        @keyframes float   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
-        @keyframes fadeUp  { from{opacity:0;transform:translateY(40px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes scaleIn { from{opacity:0;transform:scale(.94)} to{opacity:1;transform:scale(1)} }
-        @keyframes shimmer { 0%{background-position:200% 50%} 100%{background-position:-200% 50%} }
-        @keyframes glow    { 0%,100%{opacity:.6} 50%{opacity:1} }
-
-        /* Nav link */
-        .nl {
-          font-family:var(--sans); font-size:14px; font-weight:500; color:var(--sub);
-          padding:6px 12px; border-radius:980px; transition:all .18s;
-        }
-        .nl:hover { color:var(--ink); background:rgba(0,0,0,.05); }
-
-        /* Buttons */
-        .btn-primary {
-          display:inline-flex; align-items:center; gap:8px;
-          padding:14px 24px; border-radius:980px;
-          background:var(--blue); color:#fff;
-          font-family:var(--sans); font-size:15px; font-weight:600;
-          border:none; cursor:pointer;
-          box-shadow:0 1px 2px rgba(0,113,227,.2), 0 4px 16px rgba(0,113,227,.18);
-          transition:all .22s; white-space:nowrap;
-        }
-        .btn-primary:hover { background:var(--blue-d); transform:translateY(-1px); box-shadow:0 2px 4px rgba(0,113,227,.25), 0 8px 28px rgba(0,113,227,.25); }
-        .btn-primary:active { transform:scale(.98); }
-
-        .btn-secondary {
-          display:inline-flex; align-items:center; gap:6px;
-          font-family:var(--sans); font-size:15px; font-weight:500; color:var(--blue);
-          background:none; border:none; cursor:pointer; transition:opacity .2s;
-        }
-        .btn-secondary:hover { opacity:.75; }
-        .btn-secondary .arr { transition:transform .2s; }
-        .btn-secondary:hover .arr { transform:translateX(3px); }
-
-        /* Card hover */
-        .card-lift { transition:transform .3s ease, box-shadow .3s ease, border-color .3s ease; }
-        .card-lift:hover { transform:translateY(-5px); box-shadow:0 20px 56px rgba(0,0,0,.1) !important; border-color:rgba(0,0,0,.14) !important; }
-
-        /* Bento */
-        .bento { border-radius:var(--r20); overflow:hidden; transition:transform .3s ease, box-shadow .3s ease; }
-        .bento:hover { transform:translateY(-3px); box-shadow:0 16px 48px rgba(0,0,0,.09); }
-
-        /* Shimmer skeleton */
-        .shimmer-text {
-          background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 37%, #f0f0f0 63%);
-          background-size: 400% 100%;
-          animation: shimmer 1.5s ease infinite;
-          border-radius: 4px; color: transparent;
-        }
-
-        /* Grid underlay */
-        .dot-grid {
-          background-image: radial-gradient(circle, rgba(0,0,0,.06) 1px, transparent 1px);
-          background-size: 22px 22px;
-        }
-
-        /* Step line */
-        .step-line { position:absolute; left:20px; top:46px; bottom:-28px; width:1px; background:var(--border); }
-
-        /* Dark section */
-        .section-dark { background:#1d1d1f; color:#f5f5f7; }
-        .section-dark .sub { color:#86868b !important; }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar { width:6px; }
-        ::-webkit-scrollbar-thumb { background:#d2d2d7; border-radius:3px; }
+        .panel { background: rgba(255,255,255,0.88); backdrop-filter: saturate(180%) blur(20px); border: 1px solid var(--border); }
+        .scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.08) transparent; }
+        .scroll::-webkit-scrollbar { width: 4px; }
+        .scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 2px; }
+        .tab-btn { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; flex:1; padding:8px 4px; border:none; border-bottom:2px solid transparent; cursor:pointer; background:transparent; font-family:var(--mono); font-size:8px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--sub); transition:all .2s; border-radius: 8px 8px 0 0; }
+        .tab-btn:hover { background: rgba(0,0,0,0.04); color: var(--ink); }
+        .tab-active { color: var(--blue) !important; border-bottom-color: var(--blue) !important; background: rgba(0,113,227,0.06) !important; }
+        .tab-content { animation: fadeSlide .3s ease both; }
+        .map-wrap { position: absolute; inset: 0; }
       `}</style>
 
-      {/* ══════════════════ NAVBAR ══════════════════ */}
-      <header style={{
-        position: 'sticky', top: 0, zIndex: 1000,
-        background: scrollY > 6 ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0)',
-        backdropFilter: scrollY > 6 ? 'saturate(180%) blur(24px)' : 'none',
-        borderBottom: `1px solid ${scrollY > 6 ? 'rgba(0,0,0,0.08)' : 'transparent'}`,
-        transition: 'all .4s ease',
-      }}>
-        <div style={{ maxWidth: 1080, margin: '0 auto', padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <main style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
 
+        {/* ══ TOP BAR ═══════════════════════════════════════════ */}
+        <header style={{
+          height: 52, background: 'rgba(255,255,255,0.92)', backdropFilter: 'saturate(180%) blur(20px)',
+          borderBottom: `1px solid ${editMode ? 'rgba(229,62,62,0.3)' : 'var(--border)'}`,
+          display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between', padding: '0 20px', flexShrink: 0, zIndex: 50,
+        }}>
           {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 10, background: 'var(--ink)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(0,0,0,.18)',
-            }}>
-              <Zap style={{ width: 15, height: 15, color: '#fff' }} />
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: '#1d1d1f', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+              <Zap style={{ width: 14, height: 14, color: '#fff' }} />
             </div>
             <div>
-              <div style={{ fontFamily: 'var(--display)', fontSize: 17, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-.018em', lineHeight: 1 }}>GeoAI Vision</div>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.14em', textTransform: 'uppercase', marginTop: 1 }}>by SWU</div>
+              <div style={{ fontFamily: 'var(--display)', fontSize: 16, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--ink)', lineHeight: 1 }}>GeoAI Vision</div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.14em', textTransform: 'uppercase', marginTop: 1 }}>SWU · Solar Intelligence Platform</div>
             </div>
           </div>
 
-          {/* Nav */}
-          <nav style={{ display: 'flex', gap: 2 }}>
-            {[['Pipeline','#pipeline'],['Technology','#tech'],['ESG','#esg'],['FAQ','#faq']].map(([l,h]) => (
-              <a key={l} href={h} className="nl">{l}</a>
-            ))}
-          </nav>
-
-          {/* Right */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <LiveBadge />
-            <Link href="/dashboard">
-              <button className="btn-primary" style={{ padding: '9px 20px', fontSize: 13 }}>
-                Open Dashboard
-              </button>
-            </Link>
+          {/* Centre HUD */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+            {editMode && (
+              <>
+                <div style={{ display:'flex', alignItems:'center', gap:7, padding:'5px 14px', borderRadius:980, background:'rgba(229,62,62,0.08)', border:'1.5px solid rgba(229,62,62,0.28)' }}>
+                  <PingDot color="#e53e3e" />
+                  <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'#e53e3e', letterSpacing:'.1em', fontWeight:600 }}>
+                    EDIT MODE{hasEdits ? `  ·  ${deletedIds.size}D ${drawnPanels.length}M` : ''}
+                  </span>
+                </div>
+                <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
+              </>
+            )}
+            {!editMode && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <PingDot />
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--green)', letterSpacing: '.1em' }}>SYSTEM ONLINE</span>
+              </div>
+            )}
+            {!editMode && <div style={{ width: 1, height: 16, background: 'var(--border)' }} />}
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)', letterSpacing: '.1em' }}>YOLOv8-SEG + U-NET</span>
+            <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)', letterSpacing: '.1em' }}>EPSG:4326/32647</span>
+            <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 980, background: 'rgba(255,159,10,0.09)', border: '1px solid rgba(255,159,10,0.2)' }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#d48806', letterSpacing: '.1em' }}>IRRADIANCE</span>
+              <span style={{ fontFamily: 'var(--display)', fontSize: 15, fontWeight: 800, color: '#ff9f0a', letterSpacing: '-.015em' }}>{irradiance} W/m²</span>
+            </div>
           </div>
-        </div>
-      </header>
 
-      {/* ══════════════════ HERO ══════════════════ */}
-      <section style={{ textAlign: 'center', padding: '108px 24px 0', position: 'relative', overflow: 'hidden', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-
-        {/* Radial bg */}
-        <div style={{
-          position: 'absolute', inset: 0, pointerEvents: 'none',
-          background: 'radial-gradient(ellipse 90% 55% at 50% -5%, rgba(0,113,227,.07) 0%, transparent 70%)',
-        }} />
-        {/* Dot grid */}
-        <div className="dot-grid" style={{ position: 'absolute', inset: 0, opacity: .55, pointerEvents: 'none' }} />
-
-        <div style={{ position: 'relative', maxWidth: 920, width: '100%' }}>
-
-          {/* Badge */}
-          <div style={{ animation: 'fadeUp .7s cubic-bezier(.16,1,.3,1) both', display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              padding: '7px 18px', borderRadius: 980,
-              background: '#fff', border: '1px solid rgba(0,0,0,.09)',
-              boxShadow: '0 1px 6px rgba(0,0,0,.07)',
-              fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--sub)', letterSpacing: '.12em',
+          {/* Right: grade + export */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {n > 0 && (
+              <div style={{ padding: '5px 14px', borderRadius: 980, background: grade.bg, border: `1px solid ${grade.c}22` }}>
+                <span style={{ fontFamily: 'var(--display)', fontSize: 17, fontWeight: 900, color: grade.c }}>{grade.g}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: grade.c, marginLeft: 6, letterSpacing: '.1em' }}>{grade.desc}</span>
+              </div>
+            )}
+            <button onClick={downloadGeoJSON} style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 980,
+              background: 'rgba(0,113,227,0.08)', border: '1px solid rgba(0,113,227,0.2)',
+              cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--blue)',
             }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#1d8348', animation: 'pulse 2s infinite', display: 'inline-block' }} />
-              SWU Research Lab · YOLOv8 Segmentation Engine Active
-            </div>
+              <DownloadCloud style={{ width: 12, height: 12 }} />GeoJSON
+            </button>
+          </div>
+        </header>
+
+        {/* ══ BODY ═══════════════════════════════════════════ */}
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+
+          {/* MAP background */}
+          <div className="map-wrap" style={{ zIndex: 0 }}>
+            <MapComponent
+              panels={panels}
+              overlayImage={overlayImage}
+              imageBounds={imageBounds}
+              baseMap={baseMap}
+              activeLayers={activeLayers}
+              editMode={editMode}
+              drawMode={drawMode}
+              deletedIds={deletedIds}
+              drawnPanels={drawnPanels}
+              onToggleEdit={() => { setEditMode(e => !e); setDrawMode(false); }}
+              onToggleDraw={() => setDrawMode(d => !d)}
+              onDelete={(id: string|number) => { saveUndo(); setDeletedIds(s => new Set([...s, id])); }}
+              onCompleteDraw={(coords: [number,number][]) => { saveUndo(); setDrawnPanels(d => [...d, { id:`manual-${Date.now()}`, coords, note:'', source:'manual' as const }]); setDrawMode(false); }}
+              onDeleteDrawn={(id: string) => { saveUndo(); setDrawnPanels(d => d.filter(p => p.id !== id)); }}
+              onUndo={handleEditUndo}
+              undoStack={undoStack}
+            />
           </div>
 
-          {/* Headline */}
-          <h1 style={{
-            fontFamily: 'var(--display)',
-            fontSize: 'clamp(52px, 8.5vw, 100px)',
-            fontWeight: 800,
-            letterSpacing: '-.04em',
-            lineHeight: .98,
-            color: 'var(--ink)',
-            animation: 'fadeUp .85s cubic-bezier(.16,1,.3,1) .06s both',
-            marginBottom: 28,
+          {/* subtle vignette */}
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1,
+            background: 'radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(245,245,247,0.5) 100%)',
+          }} />
+
+          {/* ── LEFT PANEL ─────────────────────────────────── */}
+          <aside className="panel" style={{
+            width: leftOpen ? 340 : 52, flexShrink: 0, zIndex: 20,
+            display: 'flex', flexDirection: 'column',
+            transition: 'width .35s cubic-bezier(0.16,1,0.3,1)',
+            overflow: 'hidden', position: 'relative',
+            borderRight: editMode ? '2px solid rgba(229,62,62,0.25)' : '1px solid var(--border)',
           }}>
-            See every rooftop.<br />
-            <span style={{
-              background: 'linear-gradient(135deg, #0071e3 0%, #34aadc 50%, #5ac8fa 100%)',
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-              display: 'inline-block',
-            }}>Unlock solar potential.</span>
-          </h1>
-
-          {/* Sub */}
-          <p style={{
-            fontFamily: 'var(--sans)', fontSize: 20, color: 'var(--sub)',
-            lineHeight: 1.6, maxWidth: 560, margin: '0 auto 44px',
-            animation: 'fadeUp .85s cubic-bezier(.16,1,.3,1) .13s both',
-            fontWeight: 400,
-          }}>
-            Upload a satellite image. Our AI engine detects every rooftop panel,
-            models financial returns, and exports precision GeoJSON — in under 60 seconds.
-          </p>
-
-          {/* CTAs */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 72, animation: 'fadeUp .85s cubic-bezier(.16,1,.3,1) .22s both' }}>
-            <Link href="/dashboard">
-              <button className="btn-primary" style={{ fontSize: 17, padding: '16px 34px' }}>
-                <Map style={{ width: 18, height: 18 }} />
-                Explore Interactive Map
-                <ArrowRight style={{ width: 17, height: 17 }} />
-              </button>
-            </Link>
-            <a href="#pipeline">
-              <button className="btn-secondary" style={{ fontSize: 17 }}>
-                See how it works <ChevronRight className="arr" style={{ width: 17, height: 17 }} />
-              </button>
-            </a>
-          </div>
-
-          {/* Hero mockup */}
-          <div style={{ animation: 'scaleIn 1.1s cubic-bezier(.16,1,.3,1) .28s both', position: 'relative' }}>
-            {/* Soft shadow halo */}
-            <div style={{
-              position: 'absolute', bottom: -60, left: '8%', right: '8%', height: 120,
-              borderRadius: '50%', filter: 'blur(50px)',
-              background: 'rgba(0,113,227,.12)', pointerEvents: 'none',
-            }} />
-
-            <div style={{
-              background: '#fff',
-              border: '1px solid rgba(0,0,0,.08)',
-              borderRadius: 28,
-              overflow: 'hidden',
-              boxShadow: '0 2px 4px rgba(0,0,0,.04), 0 16px 48px rgba(0,0,0,.1), 0 48px 80px rgba(0,0,0,.06)',
-              textAlign: 'left',
+            {/* collapse btn */}
+            <button onClick={() => setLeftOpen(o => !o)} style={{
+              position: 'absolute', top: 12, right: 10, width: 24, height: 24,
+              borderRadius: '50%', border: '1px solid var(--border)',
+              background: 'var(--surface)', cursor: 'pointer', zIndex: 30,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
             }}>
-              {/* Browser chrome */}
-              <div style={{ background: '#f5f5f7', padding: '13px 20px', borderBottom: '1px solid rgba(0,0,0,.07)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 5 }}>
-                  {['#ff5f57','#febc2e','#28c840'].map(c => <div key={c} style={{ width: 12, height: 12, borderRadius: '50%', background: c }} />)}
-                </div>
-                <div style={{ flex: 1, background: '#fff', border: '1px solid rgba(0,0,0,.08)', borderRadius: 7, padding: '5px 14px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--sub)' }}>
-                  geoai.swu.ac.th/dashboard
-                </div>
-                <LiveBadge />
-              </div>
+              <ChevronRight style={{ width: 12, height: 12, color: 'var(--sub)', transform: leftOpen ? 'rotate(180deg)' : 'none', transition: 'transform .3s' }} />
+            </button>
 
-              {/* Map + sidebar */}
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', minHeight: 320 }}>
-                {/* Map */}
-                <div style={{ position: 'relative', background: '#eef0f2', overflow: 'hidden', borderRight: '1px solid rgba(0,0,0,.06)' }}>
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    backgroundImage: 'linear-gradient(rgba(0,0,0,.04) 1px, transparent 1px), linear-gradient(90deg,rgba(0,0,0,.04) 1px, transparent 1px)',
-                    backgroundSize: '28px 28px',
-                  }} />
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    background: 'radial-gradient(ellipse at 48% 50%, rgba(0,113,227,.07) 0%, transparent 60%)',
-                  }} />
+            {leftOpen && (
+              <div className="scroll" style={{ flex: 1, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-                  {/* Scan ring */}
-                  <div style={{
-                    position: 'absolute', top: '50%', left: '46%',
-                    transform: 'translate(-50%,-50%)',
-                    width: 140, height: 140, borderRadius: '50%',
-                    border: '1.5px dashed rgba(0,113,227,.22)',
-                    animation: 'spin 18s linear infinite',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <div style={{
-                      width: 86, height: 86, borderRadius: '50%',
-                      border: '1px solid rgba(0,113,227,.12)', background: 'rgba(255,255,255,.6)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      backdropFilter: 'blur(4px)',
-                    }}>
-                      <Target style={{ width: 30, height: 30, color: '#0071e3' }} />
+                {/* Upload block */}
+                <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 18, padding: 18 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#0071e3,#34aadc)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 10px rgba(0,113,227,0.22)' }}>
+                      <Target style={{ width: 16, height: 16, color: '#fff' }} />
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: 'var(--display)', fontSize: 14, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--ink)' }}>AI Pipeline</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.14em', textTransform: 'uppercase' }}>Upload · Process · Analyse</div>
                     </div>
                   </div>
 
-                  {/* Panels */}
-                  {[
-                    { t:'12%',l:'8%',  w:54,h:32,c:'#0071e3',conf:96 },
-                    { t:'25%',l:'28%', w:72,h:42,c:'#0071e3',conf:91 },
-                    { t:'57%',l:'7%',  w:58,h:34,c:'#ff9f0a',conf:74 },
-                    { t:'62%',l:'58%', w:44,h:27,c:'#0071e3',conf:89 },
-                    { t:'11%',l:'66%', w:50,h:30,c:'#ff9f0a',conf:68 },
-                    { t:'44%',l:'73%', w:38,h:23,c:'#0071e3',conf:93 },
-                    { t:'72%',l:'36%', w:48,h:29,c:'#0071e3',conf:87 },
-                  ].map((p, i) => (
-                    <div key={i} style={{
-                      position: 'absolute', top: p.t, left: p.l,
-                      width: p.w, height: p.h,
-                      background: `${p.c}12`, border: `1.5px solid ${p.c}65`, borderRadius: 4,
-                    }}>
-                      <div style={{
-                        position: 'absolute', top: -17, left: 0,
-                        background: '#fff', border: `1px solid ${p.c}40`, borderRadius: 4,
-                        padding: '1px 5px', fontFamily: 'var(--mono)', fontSize: 8, color: p.c,
-                        boxShadow: '0 1px 4px rgba(0,0,0,.08)',
-                      }}>{p.conf}%</div>
-                    </div>
-                  ))}
-
-                  {/* Scanline */}
-                  <div style={{
-                    position: 'absolute', left: 0, right: 0, height: 1.5,
-                    background: 'linear-gradient(90deg, transparent, rgba(0,113,227,.5) 30%, rgba(0,113,227,.5) 70%, transparent)',
-                    animation: 'scanL 4.5s linear infinite',
-                  }} />
-
-                  {/* HUD chip bottom-left */}
-                  <div style={{
-                    position: 'absolute', bottom: 12, left: 12,
-                    background: 'rgba(255,255,255,.92)', backdropFilter: 'blur(10px)',
-                    border: '1px solid rgba(0,0,0,.09)', borderRadius: 8,
-                    padding: '6px 11px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)',
-                    boxShadow: '0 2px 8px rgba(0,0,0,.07)',
-                  }}>YOLOv8-SEG · 7 PANELS · EPSG:32647</div>
-
-                  {/* Floating accuracy chip top-right */}
-                  <div style={{
-                    position: 'absolute', top: 12, right: 12,
-                    background: 'rgba(255,255,255,.92)', backdropFilter: 'blur(10px)',
-                    border: '1px solid rgba(0,0,0,.09)', borderRadius: 8,
-                    padding: '6px 11px', fontFamily: 'var(--mono)', fontSize: 9, color: '#1d8348',
-                    boxShadow: '0 2px 8px rgba(0,0,0,.07)', display: 'flex', alignItems: 'center', gap: 5,
+                  {/* Drop zone */}
+                  <div onClick={() => fileRef.current?.click()} style={{
+                    border: `2px dashed ${file ? 'var(--blue)' : 'rgba(0,0,0,0.12)'}`,
+                    borderRadius: 12, padding: '14px 12px', textAlign: 'center',
+                    background: file ? 'rgba(0,113,227,0.04)' : 'rgba(0,0,0,0.02)',
+                    cursor: 'pointer', transition: 'all .2s', marginBottom: 10,
                   }}>
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#1d8348', animation: 'pulse 2s infinite', display: 'inline-block' }} />
-                    94.0% CONF
-                  </div>
-                </div>
-
-                {/* Sidebar */}
-                <div style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  {[
-                    { l:'Detections', v:'1,248', c:'var(--ink)', big: true },
-                    { l:'ROI / year',  v:'฿4.2M', c:'var(--green)', big: true },
-                    { l:'AI Confidence', v:'94.0%', c:'var(--blue)', bar: 94 },
-                  ].map(s => (
-                    <div key={s.l}>
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 5 }}>{s.l}</div>
-                      <div style={{ fontFamily: 'var(--display)', fontSize: s.big ? 30 : 22, fontWeight: 800, letterSpacing: '-.025em', color: s.c, lineHeight: 1 }}>{s.v}</div>
-                      {s.bar && (
-                        <div style={{ height: 3, background: 'var(--bg2)', borderRadius: 2, overflow: 'hidden', marginTop: 8 }}>
-                          <div style={{ height: '100%', width: `${s.bar}%`, background: 'var(--blue)', borderRadius: 2 }} />
-                        </div>
-                      )}
+                    <UploadCloud style={{ width: 20, height: 20, color: file ? 'var(--blue)' : 'var(--sub)', margin: '0 auto 6px' }} />
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, color: file ? 'var(--blue)' : 'var(--sub)' }}>
+                      {file ? file.name : 'Drop GeoTIFF / PNG / JPG'}
                     </div>
-                  ))}
-
-                  <div style={{
-                    marginTop: 'auto', padding: '16px 16px', borderRadius: 14,
-                    background: 'linear-gradient(135deg, #eafaf1 0%, #d5f5e3 100%)',
-                    border: '1px solid rgba(29,131,72,.15)',
-                  }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 5 }}>Site Grade</div>
-                    <div style={{ fontFamily: 'var(--display)', fontSize: 44, fontWeight: 900, letterSpacing: '-.04em', color: 'var(--green)', lineHeight: 1 }}>A+</div>
-                    <div style={{ fontFamily: 'var(--sans)', fontSize: 11, color: '#2e7d4f', marginTop: 3 }}>Highly Suitable</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#b0b0b0', marginTop: 3 }}>.tif · .jpg · .png</div>
+                    <input ref={fileRef} type="file" accept=".tif,.jpg,.png" style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] || null)} />
                   </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Floating badge — AI speed */}
-            <div style={{
-              position: 'absolute', top: -14, right: -18,
-              background: '#fff', border: '1px solid rgba(0,0,0,.09)',
-              borderRadius: 14, padding: '10px 16px',
-              boxShadow: '0 4px 20px rgba(0,0,0,.1)',
-              display: 'flex', alignItems: 'center', gap: 10,
-              animation: 'float 4s ease-in-out infinite',
-            }}>
-              <div style={{ width: 32, height: 32, borderRadius: 10, background: '#eef4ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Cpu style={{ width: 15, height: 15, color: 'var(--blue)' }} />
-              </div>
-              <div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Processing</div>
-                <div style={{ fontFamily: 'var(--display)', fontSize: 15, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--ink)' }}>48 sec avg.</div>
-              </div>
-            </div>
-
-            {/* Floating badge — IoU */}
-            <div style={{
-              position: 'absolute', bottom: 60, left: -22,
-              background: '#fff', border: '1px solid rgba(0,0,0,.09)',
-              borderRadius: 14, padding: '10px 16px',
-              boxShadow: '0 4px 20px rgba(0,0,0,.1)',
-              display: 'flex', alignItems: 'center', gap: 10,
-              animation: 'float 5s ease-in-out 1.5s infinite',
-            }}>
-              <div style={{ width: 32, height: 32, borderRadius: 10, background: '#fff8ed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Award style={{ width: 15, height: 15, color: '#ff9f0a' }} />
-              </div>
-              <div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.1em', textTransform: 'uppercase' }}>IoU Score</div>
-                <div style={{ fontFamily: 'var(--display)', fontSize: 15, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--ink)' }}>0.854</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Scroll indicator */}
-        <div style={{ marginTop: 52, marginBottom: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, opacity: scrollY > 20 ? 0 : 1, transition: 'opacity .5s' }}>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)', letterSpacing: '.2em', textTransform: 'uppercase' }}>Scroll</div>
-          <div style={{ width: 1, height: 28, background: 'linear-gradient(to bottom, var(--border), transparent)' }} />
-        </div>
-      </section>
-
-      {/* ══════════════════ METRICS ══════════════════ */}
-      <section style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
-        <div style={{ maxWidth: 1080, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)' }}>
-          {[
-            { to: 1248,  s: '',   label: 'Panels Detected',  note: 'and counting' },
-            { to: 85200, s: '',   label: 'Usable Area m²',   note: 'total mapped' },
-            { to: 85000, s: '',   label: 'CO₂ Offset kg',    note: 'annually' },
-            { to: 94,    s: '%',  label: 'AI mAP Accuracy',  note: 'YOLOv8 + U-Net' },
-          ].map((s, i, arr) => (
-            <Reveal key={s.label} delay={i * 55}>
-              <div style={{
-                padding: '48px 28px', textAlign: 'center',
-                borderRight: i < arr.length-1 ? '1px solid var(--border)' : 'none',
-              }}>
-                <div style={{ fontFamily: 'var(--display)', fontSize: 56, fontWeight: 800, letterSpacing: '-.04em', color: 'var(--ink)', lineHeight: 1, marginBottom: 8 }}>
-                  <Count to={s.to} suffix={s.s} />
-                </div>
-                <div style={{ fontFamily: 'var(--sans)', fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 3 }}>{s.label}</div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{s.note}</div>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* ══════════════════ BENTO FEATURES ══════════════════ */}
-      <section style={{ padding: '120px 24px', background: '#fff' }}>
-        <div style={{ maxWidth: 1080, margin: '0 auto' }}>
-          <Reveal>
-            <div style={{ textAlign: 'center', marginBottom: 64 }}>
-              <Chip>Platform Features</Chip>
-              <h2 style={{ fontFamily: 'var(--display)', fontSize: 'clamp(34px,4vw,52px)', fontWeight: 800, letterSpacing: '-.03em', color: 'var(--ink)', margin: '18px 0 18px' }}>
-                Everything you need.<br />Nothing you don't.
-              </h2>
-              <p style={{ fontFamily: 'var(--sans)', fontSize: 18, color: 'var(--sub)', maxWidth: 460, margin: '0 auto', lineHeight: 1.65 }}>
-                A complete GeoAI stack — from satellite ingest to bankable financial projections.
-              </p>
-            </div>
-          </Reveal>
-
-          {/* Bento grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'auto auto', gap: 16 }}>
-
-            {/* Big left */}
-            <Reveal delay={0} className="bento" style={{ gridColumn: '1/3', gridRow: '1/2' }}>
-              <div className="bento" style={{
-                background: 'linear-gradient(135deg, #0071e3 0%, #34aadc 100%)',
-                padding: '48px 48px 0', minHeight: 340, position: 'relative', overflow: 'hidden',
-              }}>
-                <div style={{ position: 'absolute', top: -60, right: -60, width: 300, height: 300, borderRadius: '50%', background: 'rgba(255,255,255,.08)', pointerEvents: 'none' }} />
-                <Chip color="#fff" bg="rgba(255,255,255,.2)">Core AI Engine</Chip>
-                <h3 style={{ fontFamily: 'var(--display)', fontSize: 32, fontWeight: 800, letterSpacing: '-.025em', color: '#fff', margin: '14px 0 12px', lineHeight: 1.15 }}>
-                  YOLOv8 + U-Net<br />Segmentation Pipeline
-                </h3>
-                <p style={{ fontFamily: 'var(--sans)', fontSize: 15, color: 'rgba(255,255,255,.75)', lineHeight: 1.65, maxWidth: 360, marginBottom: 32 }}>
-                  Pixel-perfect polygon detection with 94% mAP@0.5 accuracy. Rejects HVAC, skylights, and false positives automatically.
-                </p>
-                {/* Mini terminal */}
-                <div style={{
-                  background: 'rgba(0,0,0,.35)', borderRadius: '14px 14px 0 0', padding: '16px 20px',
-                  fontFamily: 'var(--mono)', fontSize: 11, lineHeight: 2,
-                }}>
-                  {[
-                    { c: 'rgba(255,255,255,.4)', t: '> loading yolov8_geo.pt…' },
-                    { c: '#5ac8fa', t: '> model weights loaded ✓' },
-                    { c: 'rgba(255,255,255,.4)', t: '> running inference…' },
-                    { c: '#30d158', t: '> 7 arrays detected — conf: 0.94' },
-                  ].map((l, i) => <div key={i} style={{ color: l.c }}>{l.t}</div>)}
-                </div>
-              </div>
-            </Reveal>
-
-            {/* Top right */}
-            <Reveal delay={60} className="bento" style={{ gridColumn: '3/4', gridRow: '1/2' }}>
-              <div className="bento" style={{ background: 'var(--bg2)', padding: '36px 32px', height: '100%' }}>
-                <div style={{
-                  width: 52, height: 52, borderRadius: 14,
-                  background: 'linear-gradient(135deg, #eafaf1, #d5f5e3)',
-                  border: '1px solid rgba(29,131,72,.2)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20,
-                }}>
-                  <FileJson style={{ width: 24, height: 24, color: 'var(--green)' }} />
-                </div>
-                <h3 style={{ fontFamily: 'var(--display)', fontSize: 22, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--ink)', marginBottom: 10 }}>GeoJSON Export</h3>
-                <p style={{ fontFamily: 'var(--sans)', fontSize: 14, color: 'var(--sub)', lineHeight: 1.65, marginBottom: 20 }}>
-                  Export EPSG:4326 GeoJSON or Shapefile compatible with AutoCAD, QGIS, and ArcGIS instantly.
-                </p>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <Chip color="var(--green)">EPSG:32647</Chip>
-                  <Chip color="var(--green)">WKT</Chip>
-                  <Chip color="var(--green)">PostGIS</Chip>
-                </div>
-              </div>
-            </Reveal>
-
-            {/* Bottom left */}
-            <Reveal delay={100} className="bento">
-              <div className="bento" style={{ background: '#1d1d1f', padding: '36px 32px' }}>
-                <div style={{
-                  width: 52, height: 52, borderRadius: 14,
-                  background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.1)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20,
-                }}>
-                  <TrendingUp style={{ width: 24, height: 24, color: '#30d158' }} />
-                </div>
-                <h3 style={{ fontFamily: 'var(--display)', fontSize: 22, fontWeight: 800, letterSpacing: '-.02em', color: '#f5f5f7', marginBottom: 10 }}>25-Year ROI Model</h3>
-                <p style={{ fontFamily: 'var(--sans)', fontSize: 14, color: '#86868b', lineHeight: 1.65 }}>
-                  Instant CAPEX, break-even, IRR, and cumulative cash flow projections with Thai EGAT tariff rates.
-                </p>
-                <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {[['CAPEX','฿1.2M','#86868b',28],['ROI Y10','฿8.1M','#30d158',82],['ROI Y25','฿24M','#5ac8fa',100]].map(([l,v,c,p]) => (
-                    <div key={String(l)}>
+                  {isUploading && (
+                    <>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#86868b' }}>{l}</span>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: String(c) }}>{v}</span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--blue)' }}>{Math.round(uploadPct)}%</span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)' }}>Processing…</span>
                       </div>
-                      <div style={{ height: 3, background: 'rgba(255,255,255,.08)', borderRadius: 2 }}>
-                        <div style={{ height: '100%', width: `${p}%`, background: String(c), borderRadius: 2 }} />
+                      <div style={{ height: 3, background: 'rgba(0,0,0,0.07)', borderRadius: 2, overflow: 'hidden', marginBottom: 10 }}>
+                        <div style={{ height: '100%', width: `${uploadPct}%`, background: 'var(--blue)', borderRadius: 2, transition: 'width .3s' }} />
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Reveal>
-
-            {/* Bottom center */}
-            <Reveal delay={140} className="bento">
-              <div className="bento" style={{ background: 'var(--bg2)', padding: '36px 32px' }}>
-                <div style={{
-                  width: 52, height: 52, borderRadius: 14,
-                  background: '#eef4ff', border: '1px solid rgba(0,113,227,.2)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20,
-                }}>
-                  <Workflow style={{ width: 24, height: 24, color: 'var(--blue)' }} />
-                </div>
-                <h3 style={{ fontFamily: 'var(--display)', fontSize: 22, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--ink)', marginBottom: 10 }}>String Wiring Sim</h3>
-                <p style={{ fontFamily: 'var(--sans)', fontSize: 14, color: 'var(--sub)', lineHeight: 1.65 }}>
-                  K-Means clustering groups nearby panels into efficient string inverter circuits — instantly.
-                </p>
-                <div style={{ marginTop: 20 }}>
-                  <svg viewBox="0 0 200 80" style={{ width: '100%' }}>
-                    {[40,80,120,160].map((x, i) => (
-                      <g key={i}>
-                        <rect x={x-12} y={18} width={24} height={14} rx={3} fill={i%2===0?'#0071e3':'#34aadc'} opacity={.85} />
-                        {i < 3 && <line x1={x+12} y1={25} x2={x+68} y2={25} stroke="#0071e3" strokeWidth={1.5} strokeDasharray="4 3" opacity={.4} />}
-                      </g>
-                    ))}
-                    {[40,80,120,160].map((x, i) => (
-                      <g key={`b${i}`}>
-                        <rect x={x-12} y={48} width={24} height={14} rx={3} fill={i%2===0?'#ff9f0a':'#ffbe5c'} opacity={.85} />
-                        {i < 3 && <line x1={x+12} y1={55} x2={x+68} y2={55} stroke="#ff9f0a" strokeWidth={1.5} strokeDasharray="4 3" opacity={.4} />}
-                      </g>
-                    ))}
-                  </svg>
-                </div>
-              </div>
-            </Reveal>
-
-            {/* Bottom right */}
-            <Reveal delay={180} className="bento">
-              <div className="bento" style={{ background: 'linear-gradient(135deg, #fff8ed 0%, #fef3d7 100%)', border: '1px solid rgba(255,159,10,.15)', padding: '36px 32px' }}>
-                <div style={{
-                  width: 52, height: 52, borderRadius: 14,
-                  background: 'rgba(255,159,10,.15)', border: '1px solid rgba(255,159,10,.25)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20,
-                }}>
-                  <Leaf style={{ width: 24, height: 24, color: '#d48806' }} />
-                </div>
-                <h3 style={{ fontFamily: 'var(--display)', fontSize: 22, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--ink)', marginBottom: 10 }}>Carbon Tokens (CCT)</h3>
-                <p style={{ fontFamily: 'var(--sans)', fontSize: 14, color: '#8b6914', lineHeight: 1.65, marginBottom: 16 }}>
-                  Automatically compute CO₂ offset and generate tradeable Carbon Credit Tokens for ESG reporting.
-                </p>
-                <div style={{ fontFamily: 'var(--display)', fontSize: 38, fontWeight: 900, letterSpacing: '-.04em', color: '#b8860b' }}>12,750 <span style={{ fontSize: 16, fontWeight: 600 }}>CCT</span></div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#d48806', letterSpacing: '.1em', marginTop: 3 }}>Est. value: $1,912 USD</div>
-              </div>
-            </Reveal>
-          </div>
-        </div>
-      </section>
-
-      {/* ══════════════════ PIPELINE ══════════════════ */}
-      <section id="pipeline" style={{ padding: '120px 24px', background: 'var(--bg3)' }}>
-        <div style={{ maxWidth: 1080, margin: '0 auto' }}>
-          <Reveal>
-            <div style={{ textAlign: 'center', marginBottom: 80 }}>
-              <Chip>Pipeline</Chip>
-              <h2 style={{ fontFamily: 'var(--display)', fontSize: 'clamp(34px,4vw,52px)', fontWeight: 800, letterSpacing: '-.03em', color: 'var(--ink)', margin: '18px 0 18px' }}>
-                From pixels to profit.<br />In three steps.
-              </h2>
-              <p style={{ fontFamily: 'var(--sans)', fontSize: 18, color: 'var(--sub)', maxWidth: 440, margin: '0 auto', lineHeight: 1.65 }}>
-                A seamless automated pipeline — no manual GIS work required.
-              </p>
-            </div>
-          </Reveal>
-
-          {[
-            {
-              n:'01', color:'#0071e3', icon:<Satellite style={{width:22,height:22}}/>,
-              title: 'Satellite Image Acquisition',
-              body: 'Upload GeoTIFF, PNG, or JPEG. CLAHE and Histogram Equalization remove cloud shadows, balance exposure, and sharpen edges — giving the AI perfect input.',
-              tags: ['CLAHE Processing','Multi-band Stacking','10 cm / px'],
-              vis: (
-                <div style={{ height:300, background:'#eef0f2', borderRadius:18, border:'1px solid rgba(0,0,0,.07)', overflow:'hidden', position:'relative', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <div style={{ position:'absolute', inset:0, backgroundImage:'linear-gradient(rgba(0,0,0,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.04) 1px,transparent 1px)', backgroundSize:'28px 28px' }} />
-                  <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse at 50% 50%, rgba(0,113,227,.06) 0%, transparent 60%)' }} />
-                  <div style={{ width:148, height:148, borderRadius:'50%', border:'1.5px dashed rgba(0,113,227,.2)', animation:'spin 14s linear infinite', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <div style={{ width:90, height:90, borderRadius:'50%', border:'1px solid rgba(0,113,227,.12)', background:'rgba(255,255,255,.7)', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)' }}>
-                      <Satellite style={{ width:38, height:38, color:'#0071e3' }} />
-                    </div>
-                  </div>
-                  <div style={{ position:'absolute', left:0, right:0, height:1.5, background:'linear-gradient(90deg,transparent,rgba(0,113,227,.45) 30%,rgba(0,113,227,.45) 70%,transparent)', animation:'scanL 3.5s linear infinite' }} />
-                  <div style={{ position:'absolute', bottom:14, left:14, background:'rgba(255,255,255,.9)', backdropFilter:'blur(8px)', border:'1px solid rgba(0,0,0,.09)', borderRadius:8, padding:'6px 11px', fontFamily:'var(--mono)', fontSize:9, color:'var(--sub)' }}>RESOLUTION: 10cm/px · CLAHE ACTIVE</div>
-                </div>
-              ),
-            },
-            {
-              n:'02', color:'#8e44ad', icon:<BrainCircuit style={{width:22,height:22}}/>,
-              title: 'AI Deep Segmentation',
-              body: 'YOLOv8 + U-Net draws pixel-perfect polygons — rejecting skylights, HVAC, and water tanks. Achieves 94% mAP@0.5 and 0.854 IoU on benchmark datasets.',
-              tags: ['Instance Segmentation','94% mAP@0.5','0.854 IoU'],
-              vis: (
-                <div style={{ height:300, background:'var(--bg2)', borderRadius:18, border:'1px solid rgba(0,0,0,.07)', overflow:'hidden', padding:24, display:'flex', flexDirection:'column' }}>
-                  <div style={{ display:'flex', gap:5, marginBottom:14 }}>
-                    {['#ff5f57','#febc2e','#28c840'].map(c=><div key={c} style={{width:9,height:9,borderRadius:'50%',background:c}}/>)}
-                  </div>
-                  {[
-                    {c:'var(--sub)',t:'> initializing yolov8_geo.pt…'},
-                    {c:'#8e44ad',t:'> model weights loaded ✓'},
-                    {c:'var(--sub)',t:'> running inference on tile…'},
-                    {c:'var(--green)',t:'> 7 solar arrays detected'},
-                    {c:'var(--sub)',t:'> extracting WKT polygons…'},
-                    {c:'var(--blue)',t:'> piping to PostGIS ✓'},
-                  ].map((l,i)=>(
-                    <div key={i} style={{fontFamily:'var(--mono)',fontSize:12,color:l.c,lineHeight:1.9}}>{l.t}</div>
-                  ))}
-                  <div style={{ marginTop:'auto', background:'#fff', border:'1px solid rgba(0,0,0,.07)', borderRadius:10, padding:12, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <svg viewBox="0 0 120 72" style={{width:190,height:114}}>
-                      <polygon points="12,18 88,9 102,60 18,66" stroke="#8e44ad" strokeWidth="1.5" fill="rgba(142,68,173,.09)" strokeDasharray="5 3"/>
-                      <circle cx="57" cy="36" r="4" fill="#8e44ad"/>
-                      <text x="62" y="32" fill="#8e44ad" fontSize="8" fontFamily="monospace" opacity=".85">CONF: 0.96</text>
-                      <polygon points="64,15 95,11 100,32 68,36" stroke="#0071e3" strokeWidth="1" fill="rgba(0,113,227,.07)" strokeDasharray="3 2"/>
-                      <text x="66" y="24" fill="#0071e3" fontSize="7" fontFamily="monospace" opacity=".8">0.88</text>
-                    </svg>
-                  </div>
-                </div>
-              ),
-            },
-            {
-              n:'03', color:'var(--green)', icon:<BarChart3 style={{width:22,height:22}}/>,
-              title: 'Web GIS & Financial Engineering',
-              body: 'Data flows into PostGIS. K-Means clusters panels into string inverter groups, simulates wiring, and instantly projects CAPEX, 25-year cash flow, and carbon token value.',
-              tags: ['K-Means Clustering','25-Year Projection','Carbon Tokens'],
-              vis: (
-                <div style={{ height:300, background:'var(--bg2)', borderRadius:18, border:'1px solid rgba(0,0,0,.07)', overflow:'hidden', padding:24, display:'flex', flexDirection:'column', gap:14 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                    <span style={{ fontFamily:'var(--sans)', fontSize:12, fontWeight:600, color:'var(--sub)' }}>25-Year Cash Flow Projection</span>
-                    <TrendingUp style={{width:15,height:15,color:'var(--green)'}}/>
-                  </div>
-                  {[
-                    {l:'CAPEX',w:'28%',c:'#94a3b8',v:'฿1.2M'},
-                    {l:'Break-Even Yr 7',w:'52%',c:'#ff9f0a',v:'฿0'},
-                    {l:'ROI Year 10',w:'80%',c:'var(--green)',v:'฿8.1M'},
-                    {l:'ROI Year 25',w:'100%',c:'#0071e3',v:'฿24M'},
-                  ].map(b=>(
-                    <div key={b.l}>
-                      <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
-                        <span style={{fontFamily:'var(--sans)',fontSize:11,color:'var(--sub)'}}>{b.l}</span>
-                        <span style={{fontFamily:'var(--mono)',fontSize:11,color:b.c,fontWeight:500}}>{b.v}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px', background: 'rgba(0,113,227,0.06)', border: '1px solid rgba(0,113,227,0.15)', borderRadius: 9 }}>
+                        <ScanLine style={{ width: 11, height: 11, color: 'var(--blue)', flexShrink: 0 }} />
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--blue)' }}>{scanMessage}</span>
                       </div>
-                      <div style={{height:5,background:'rgba(0,0,0,.07)',borderRadius:3,overflow:'hidden'}}>
-                        <div style={{height:'100%',width:b.w,background:b.c,borderRadius:3}}/>
-                      </div>
-                    </div>
-                  ))}
-                  <div style={{flex:1,position:'relative',borderLeft:'1.5px solid rgba(0,0,0,.1)',borderBottom:'1.5px solid rgba(0,0,0,.1)'}}>
-                    <svg style={{position:'absolute',inset:0,width:'100%',height:'100%'}} viewBox="0 0 100 56" preserveAspectRatio="none">
-                      <defs><linearGradient id="gg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#1d8348" stopOpacity=".2"/><stop offset="100%" stopColor="#1d8348" stopOpacity="0"/></linearGradient></defs>
-                      <path d="M0,56 L0,50 C18,44 38,30 58,16 C78,4 88,2 100,0 L100,56Z" fill="url(#gg)"/>
-                      <path d="M0,50 C18,44 38,30 58,16 C78,4 88,2 100,0" fill="none" stroke="var(--green)" strokeWidth="1.5"/>
-                      <line x1="36" y1="0" x2="36" y2="56" stroke="#ff9f0a" strokeWidth=".8" strokeDasharray="3 2" opacity=".7"/>
-                      <text x="37" y="8" fill="#ff9f0a" fontSize="5" fontFamily="monospace" opacity=".9">B/E</text>
-                    </svg>
-                  </div>
-                </div>
-              ),
-            },
-          ].map((step, si) => (
-            <Reveal key={step.n} delay={si * 80}>
-              <div style={{ position:'relative', paddingBottom: si<2 ? 60 : 0 }}>
-                {si < 2 && <div className="step-line"/>}
-                <div style={{ display:'flex', gap:24 }}>
-                  <div style={{
-                    width:42, height:42, borderRadius:'50%', flexShrink:0,
-                    background:`${step.color}0e`, border:`1.5px solid ${step.color}28`,
-                    display:'flex', alignItems:'center', justifyContent:'center', color:step.color,
-                  }}>{step.icon}</div>
-                  <div style={{flex:1}}>
-                    <div style={{fontFamily:'var(--mono)',fontSize:10,color:step.color,letterSpacing:'.18em',marginBottom:7}}>STEP {step.n}</div>
-                    <h3 style={{fontFamily:'var(--display)',fontSize:28,fontWeight:800,letterSpacing:'-.022em',color:'var(--ink)',marginBottom:13,lineHeight:1.15}}>{step.title}</h3>
-                    <p style={{fontFamily:'var(--sans)',fontSize:15,color:'var(--sub)',lineHeight:1.75,marginBottom:18}}>{step.body}</p>
-                    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:24}}>
-                      {step.tags.map(t=><Chip key={t} color={step.color}>{t}</Chip>)}
-                    </div>
-                    {step.vis}
-                  </div>
-                </div>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* ══════════════════ TECHNOLOGY (dark) ══════════════════ */}
-      <section id="tech" className="section-dark" style={{ padding:'120px 24px' }}>
-        <div style={{ maxWidth:1080, margin:'0 auto' }}>
-          <Reveal>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:80, alignItems:'center', marginBottom:80 }}>
-              <div>
-                <Chip color="#5ac8fa" bg="rgba(90,200,250,.1)">Technology</Chip>
-                <h2 style={{ fontFamily:'var(--display)', fontSize:'clamp(34px,4vw,50px)', fontWeight:800, letterSpacing:'-.03em', color:'#f5f5f7', margin:'18px 0 18px', lineHeight:1.1 }}>
-                  Proven geospatial<br />science, industrialised.
-                </h2>
-                <p style={{ fontFamily:'var(--sans)', fontSize:17, color:'#86868b', lineHeight:1.7, marginBottom:32 }}>
-                  Every layer of the stack is chosen for spatial precision — from CLAHE image enhancement to EPSG:32647 coordinate math to Moran's I autocorrelation clustering.
-                </p>
-                <Link href="/dashboard">
-                  <button className="btn-secondary" style={{ color:'#2997ff' }}>
-                    Explore the platform <ChevronRight className="arr" style={{width:16,height:16}}/>
-                  </button>
-                </Link>
-              </div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-                {[
-                  {v:'0.854',l:'IoU Score',   n:'Intersection over Union'},
-                  {v:'94%',  l:'mAP@0.5',     n:'Detection accuracy'},
-                  {v:'0.74', l:"Moran's I",   n:'Spatial clustering index'},
-                  {v:'15 cm',l:'Field Match', n:'vs physical measurement'},
-                ].map(s=>(
-                  <div key={s.l} style={{ background:'rgba(255,255,255,.05)', border:'1px solid rgba(255,255,255,.09)', borderRadius:16, padding:'24px 20px' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:36, fontWeight:900, letterSpacing:'-.04em', color:'#2997ff', lineHeight:1, marginBottom:8 }}>{s.v}</div>
-                    <div style={{ fontFamily:'var(--sans)', fontSize:14, fontWeight:600, color:'#f5f5f7', marginBottom:3 }}>{s.l}</div>
-                    <div style={{ fontFamily:'var(--mono)', fontSize:10, color:'#6e6e73', letterSpacing:'.1em' }}>{s.n}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Reveal>
-
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
-            {[
-              {icon:<Satellite style={{width:22,height:22}}/>,c:'#5ac8fa',step:'Ingest', title:'GeoTIFF Input',   desc:'Multispectral TIFF with DIP preprocessing'},
-              {icon:<Layers style={{width:22,height:22}}/>,   c:'#5e5ce6',step:'Enhance',title:'CLAHE + EQ',      desc:'Contrast-limited adaptive histogram equalisation'},
-              {icon:<BrainCircuit style={{width:22,height:22}}/>,c:'#bf5af2',step:'Infer',title:'YOLOv8 + U-Net', desc:'Instance segmentation with confidence scoring'},
-              {icon:<Database style={{width:22,height:22}}/>,  c:'#30d158',step:'Store',  title:'PostGIS',        desc:'EPSG:32647 spatial storage and GeoJSON export'},
-            ].map((c,i)=>(
-              <Reveal key={i} delay={i*55}>
-                <div style={{ background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.08)', borderRadius:18, padding:'24px 20px' }}>
-                  <div style={{ width:48, height:48, borderRadius:13, marginBottom:18, background:`${c.c}18`, border:`1px solid ${c.c}25`, display:'flex', alignItems:'center', justifyContent:'center', color:c.c }}>{c.icon}</div>
-                  <div style={{ fontFamily:'var(--mono)', fontSize:9, color:c.c, letterSpacing:'.18em', marginBottom:5 }}>{c.step}</div>
-                  <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:800, color:'#f5f5f7', marginBottom:6 }}>{c.title}</div>
-                  <div style={{ fontFamily:'var(--sans)', fontSize:13, color:'#6e6e73', lineHeight:1.6 }}>{c.desc}</div>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ══════════════════ WHO FOR ══════════════════ */}
-      <section style={{ padding:'120px 24px', background:'var(--bg3)' }}>
-        <div style={{ maxWidth:1080, margin:'0 auto' }}>
-          <Reveal>
-            <div style={{ textAlign:'center', marginBottom:64 }}>
-              <Chip color="#ff9f0a" bg="rgba(255,159,10,.08)">Audience</Chip>
-              <h2 style={{ fontFamily:'var(--display)', fontSize:'clamp(34px,4vw,52px)', fontWeight:800, letterSpacing:'-.03em', color:'var(--ink)', margin:'18px 0 18px' }}>
-                Built for people<br />who decide.
-              </h2>
-            </div>
-          </Reveal>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16 }}>
-            {[
-              {icon:<Landmark style={{width:24,height:24}}/>,color:'var(--blue)',title:'Government & Policy',sub:'Public Sector',featured:false,
-               items:['National solar capacity mapping','Grid upgrade planning','Net Zero progress tracking','No manual surveys needed']},
-              {icon:<Building2 style={{width:24,height:24}}/>,color:'var(--green)',title:'Energy Investors',sub:'Finance',featured:true,
-               items:['Industrial estate screening','CAPEX & IRR modeling','Phase-based investment zoning','ESG carbon token valuation']},
-              {icon:<SunMedium style={{width:24,height:24}}/>,color:'#8e44ad',title:'EPC Contractors',sub:'Engineering',featured:false,
-               items:['GeoJSON → AutoCAD export',"Moran's I string planning",'EPSG:32647 coordinate math','Wiring diagram simulation']},
-            ].map((c,i)=>(
-              <Reveal key={c.title} delay={i*70}>
-                <div className="card-lift" style={{
-                  background: c.featured ? 'var(--ink)' : '#fff',
-                  border:`1px solid ${c.featured ? 'var(--ink)' : 'rgba(0,0,0,.07)'}`,
-                  borderRadius:20, padding:'36px 28px',
-                  position:'relative', overflow:'hidden', cursor:'default',
-                  boxShadow: c.featured ? '0 8px 32px rgba(0,0,0,.16)' : '0 1px 4px rgba(0,0,0,.05)',
-                }}>
-                  {c.featured && (
-                    <div style={{ position:'absolute', top:18, right:18, background:'var(--blue)', color:'#fff', fontFamily:'var(--mono)', fontSize:9, letterSpacing:'.12em', textTransform:'uppercase', padding:'4px 10px', borderRadius:999 }}>Popular</div>
+                    </>
                   )}
-                  <div style={{ width:52, height:52, borderRadius:14, marginBottom:22, background:`${c.color}12`, border:`1px solid ${c.color}22`, display:'flex', alignItems:'center', justifyContent:'center', color:c.color }}>{c.icon}</div>
-                  <div style={{ fontFamily:'var(--mono)', fontSize:9, color: c.featured ? '#6e6e73' : 'var(--sub)', letterSpacing:'.16em', textTransform:'uppercase', marginBottom:8 }}>{c.sub}</div>
-                  <h3 style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:800, letterSpacing:'-.02em', color: c.featured ? '#f5f5f7' : 'var(--ink)', marginBottom:22, lineHeight:1.2 }}>{c.title}</h3>
-                  {c.items.map(it=>(
-                    <div key={it} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                      <div style={{ width:16, height:16, borderRadius:'50%', flexShrink:0, background:`${c.color}14`, border:`1px solid ${c.color}28`, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        <div style={{ width:6, height:6, borderRadius:'50%', background:c.color }}/>
-                      </div>
-                      <span style={{ fontFamily:'var(--sans)', fontSize:14, color: c.featured ? '#a1a1a6' : 'var(--sub)' }}>{it}</span>
-                    </div>
-                  ))}
-                  <div style={{ marginTop:26 }}>
-                    <button className="btn-secondary" style={{ color:c.color, fontSize:14 }}>
-                      Request access <ChevronRight className="arr" style={{width:14,height:14}}/>
+
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <button onClick={handleUpload} disabled={isUploading || !file} style={{
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                      padding: '11px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                      background: 'var(--blue)', color: '#fff',
+                      fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
+                      opacity: isUploading || !file ? .4 : 1, transition: 'all .2s',
+                    }}>
+                      {isUploading ? <><Cpu style={{ width: 13, height: 13, animation: 'spinSlow 1s linear infinite' }} />Processing…</> : <><Zap style={{ width: 13, height: 13 }} />Run Pipeline</>}
+                    </button>
+                    <button onClick={handleClear} style={{
+                      padding: '11px 13px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.09)',
+                      background: 'var(--surface)', cursor: 'pointer', color: 'var(--sub)', transition: 'all .2s',
+                    }}>
+                      <Trash2 style={{ width: 14, height: 14 }} />
                     </button>
                   </div>
                 </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      {/* ══════════════════ ESG ══════════════════ */}
-      <section id="esg" style={{ padding:'120px 24px', background:'#fff' }}>
-        <div style={{ maxWidth:1080, margin:'0 auto' }}>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:80, alignItems:'center' }}>
-            <Reveal>
-              <div>
-                <Chip color="var(--green)" bg="rgba(29,131,72,.07)">ESG Impact</Chip>
-                <h2 style={{ fontFamily:'var(--display)', fontSize:'clamp(34px,4vw,50px)', fontWeight:800, letterSpacing:'-.03em', color:'var(--ink)', margin:'18px 0 20px', lineHeight:1.1 }}>
-                  Turning data into<br />measurable impact.
-                </h2>
-                <p style={{ fontFamily:'var(--sans)', fontSize:17, color:'var(--sub)', lineHeight:1.7, marginBottom:32 }}>
-                  GeoAI Vision converts physical detections into quantifiable environmental outcomes — from CO₂ tracking to tradeable carbon token generation.
-                </p>
-                {['CO₂ offset calculated per panel array','Equivalent trees planted computed','Tradeable Carbon Credit Tokens (CCT)','Aligned with Thailand Net Zero 2065'].map((it,i)=>(
-                  <div key={i} style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}>
-                    <CheckCircle2 style={{ width:18, height:18, color:'var(--green)', flexShrink:0 }}/>
-                    <span style={{ fontFamily:'var(--sans)', fontSize:15, color:'var(--sub)' }}>{it}</span>
+                {/* Layer Control */}
+                <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 18, padding: 18 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 14, height: 1.5, background: 'var(--blue)', borderRadius: 1 }} />
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--blue)' }}>GIS Layers</span>
+                    </div>
+                    <Lozenge color="var(--blue)">EPSG:32647</Lozenge>
+                  </div>
+
+                  {/* Base map */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)' }}>Base Map</span>
+                    <div style={{ display: 'flex', gap: 2, padding: 2, background: 'rgba(0,0,0,0.05)', borderRadius: 8 }}>
+                      {['satellite', 'dark', 'street'].map(m => (
+                        <button key={m} onClick={() => setBaseMap(m)} style={{
+                          padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                          background: baseMap === m ? '#fff' : 'transparent',
+                          color: baseMap === m ? 'var(--ink)' : 'var(--sub)',
+                          fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase',
+                          boxShadow: baseMap === m ? '0 1px 4px rgba(0,0,0,0.09)' : 'none', transition: 'all .2s',
+                        }}>{m === 'satellite' ? 'SAT' : m === 'dark' ? 'DRK' : 'STR'}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {[
+                    { key: 'stringWiring', label: 'String Wiring',   sub: 'Inverter path routing', color: 'var(--blue)',  icon: <Cable      style={{ width: 12, height: 12 }} /> },
+                    { key: 'priority',     label: 'Priority Zoning', sub: 'Investment phases',      color: 'var(--green)', icon: <ListChecks style={{ width: 12, height: 12 }} /> },
+                    { key: 'heatmap',      label: 'Area Heatmap',    sub: 'Panel size intensity',   color: '#8e44ad',      icon: <CloudSun   style={{ width: 12, height: 12 }} /> },
+                  ].map(({ key, label, sub, color, icon }) => (
+                    <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                        <span style={{ color }}>{icon}</span>
+                        <div>
+                          <div style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>{label}</div>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)' }}>{sub}</div>
+                        </div>
+                      </div>
+                      <Toggle on={(activeLayers as any)[key]} color={color} onToggle={() => setActiveLayers(p => ({ ...p, [key]: !(p as any)[key] }))} />
+                    </div>
+                  ))}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14 }}>
+                    <Kpi label="Moran's I" value="0.74" sub="High Clustering" accent="var(--green)" />
+                    <Kpi label="Live W/m²"  value={irradiance} sub="Irradiance" color="#ff9f0a" />
+                  </div>
+                </div>
+
+                {/* Grade card */}
+                {n > 0 && (
+                  <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 18, padding: 18, display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{ width: 62, height: 62, borderRadius: 16, flexShrink: 0, background: grade.bg, border: `1px solid ${grade.c}20`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontFamily: 'var(--display)', fontSize: 30, fontWeight: 900, color: grade.c, lineHeight: 1 }}>{grade.g}</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: grade.c, letterSpacing: '.12em' }}>GRADE</span>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 4 }}>Site Suitability Index</div>
+                      <div style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: grade.c }}>{grade.desc}</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)', marginTop: 3 }}>n={n} panels · {totalArea.toFixed(1)} m²</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Edit Detections card ─────────────────────── */}
+                {n > 0 && (
+                  <div style={{
+                    background: editMode ? 'rgba(229,62,62,0.04)' : '#fff',
+                    border: `1.5px solid ${editMode ? 'rgba(229,62,62,0.28)' : 'var(--border)'}`,
+                    borderRadius: 18, padding: 18,
+                    transition: 'all .25s',
+                  }}>
+                    {/* Header row */}
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: editMode ? 14 : 0 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+                        <div style={{
+                          width:34, height:34, borderRadius:10, flexShrink:0,
+                          background: editMode ? 'rgba(229,62,62,0.1)' : 'rgba(0,0,0,0.04)',
+                          display:'flex', alignItems:'center', justifyContent:'center',
+                          transition: 'background .25s',
+                        }}>
+                          <PenLine style={{ width:15, height:15, color: editMode ? '#e53e3e' : 'var(--sub)' }} />
+                        </div>
+                        <div>
+                          <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:800, letterSpacing:'-.01em', color: editMode ? '#c53030' : 'var(--ink)', lineHeight:1 }}>
+                            Edit Detections
+                          </div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize:8, color:'var(--sub)', letterSpacing:'.12em', textTransform:'uppercase', marginTop:3 }}>
+                            {editMode ? (drawMode ? 'DRAW MODE ACTIVE' : 'CLICK PANEL TO DELETE') : 'Correct AI errors'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Main toggle */}
+                      <button onClick={() => { setEditMode(e=>!e); setDrawMode(false); }} style={{
+                        padding:'7px 14px', borderRadius:980,
+                        background: editMode ? '#e53e3e' : '#1d1d1f',
+                        border:'none', cursor:'pointer', color:'#fff',
+                        fontFamily:'var(--sans)', fontSize:12, fontWeight:600,
+                        boxShadow: editMode ? '0 2px 10px rgba(229,62,62,0.28)' : '0 1px 6px rgba(0,0,0,0.14)',
+                        transition:'all .2s', whiteSpace:'nowrap',
+                        display:'flex', alignItems:'center', gap:5,
+                      }}>
+                        {editMode
+                          ? <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Exit</>
+                          : <><PenLine style={{width:12,height:12}}/> Edit</>}
+                      </button>
+                    </div>
+
+                    {/* Expanded content */}
+                    {editMode && (
+                      <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+
+                        {/* Stats row */}
+                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:6 }}>
+                          {[
+                            { label:'AI Active', val:activeCount,       color:'var(--blue)' },
+                            { label:'Deleted',   val:deletedIds.size,   color:'#e53e3e'     },
+                            { label:'Manual',    val:drawnPanels.length, color:'var(--green)' },
+                          ].map(s => (
+                            <div key={s.label} style={{
+                              padding:'8px 6px', borderRadius:10, textAlign:'center',
+                              background:`${s.color}08`, border:`1px solid ${s.color}20`,
+                            }}>
+                              <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:900, color:s.color, lineHeight:1 }}>{s.val}</div>
+                              <div style={{ fontFamily:'var(--mono)', fontSize:7, color:'var(--sub)', letterSpacing:'.1em', textTransform:'uppercase', marginTop:3 }}>{s.label}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Context hint */}
+                        {!drawMode && (
+                          <div style={{
+                            padding:'8px 10px', borderRadius:10,
+                            background:'rgba(229,62,62,0.05)', border:'1px solid rgba(229,62,62,0.18)',
+                            display:'flex', alignItems:'flex-start', gap:8,
+                          }}>
+                            <Eraser style={{ width:13, height:13, color:'#e53e3e', marginTop:1, flexShrink:0 }} />
+                            <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--sub)', lineHeight:1.6 }}>
+                              Panels are highlighted red on map. Click any to remove as false-positive.
+                            </span>
+                          </div>
+                        )}
+                        {drawMode && (
+                          <div style={{
+                            padding:'8px 10px', borderRadius:10,
+                            background:'rgba(0,113,227,0.06)', border:'1px solid rgba(0,113,227,0.22)',
+                            display:'flex', alignItems:'flex-start', gap:8,
+                          }}>
+                            <PenLine style={{ width:13, height:13, color:'var(--blue)', marginTop:1, flexShrink:0 }} />
+                            <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--sub)', lineHeight:1.6 }}>
+                              Click map to place vertices (≥3). Use map toolbar to Finish or Cancel.
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Draw toggle */}
+                        <button onClick={() => setDrawMode(d=>!d)} style={{
+                          display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+                          padding:'9px', borderRadius:10,
+                          background: drawMode ? 'rgba(0,113,227,0.1)' : 'rgba(0,0,0,0.04)',
+                          border:`1.5px solid ${drawMode ? 'rgba(0,113,227,0.3)' : 'rgba(0,0,0,0.1)'}`,
+                          cursor:'pointer', color: drawMode ? 'var(--blue)' : 'var(--ink)',
+                          fontFamily:'var(--sans)', fontSize:12, fontWeight:600, transition:'all .18s',
+                        }}>
+                          <PenLine style={{width:13,height:13}}/>
+                          {drawMode ? '✏ Drawing… (click map to add points)' : 'Draw New Panel'}
+                        </button>
+
+                        {/* Undo + Export row */}
+                        <div style={{ display:'flex', gap:7 }}>
+                          <button onClick={handleEditUndo} disabled={!undoStack.length} style={{
+                            flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:5,
+                            padding:'8px', borderRadius:10,
+                            background:'rgba(0,0,0,0.03)', border:'1px solid rgba(0,0,0,0.08)',
+                            cursor: undoStack.length ? 'pointer' : 'not-allowed',
+                            color: undoStack.length ? 'var(--ink)' : '#c0c0c0',
+                            fontFamily:'var(--sans)', fontSize:11, fontWeight:600, opacity: undoStack.length ? 1 : 0.5,
+                          }}>
+                            <RotateCcw style={{width:12,height:12}}/> Undo
+                          </button>
+                          {hasEdits && (
+                            <button onClick={handleExportEdited} style={{
+                              flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:5,
+                              padding:'8px', borderRadius:10,
+                              background:'rgba(29,131,72,0.08)', border:'1.5px solid rgba(29,131,72,0.25)',
+                              cursor:'pointer', color:'var(--green)',
+                              fontFamily:'var(--sans)', fontSize:11, fontWeight:600,
+                            }}>
+                              <Download style={{width:12,height:12}}/> Export
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Reset */}
+                        {hasEdits && (
+                          <button onClick={handleEditReset} style={{
+                            display:'flex', alignItems:'center', justifyContent:'center', gap:5,
+                            padding:'7px', borderRadius:10,
+                            background:'transparent', border:'1px solid rgba(0,0,0,0.08)',
+                            cursor:'pointer', color:'var(--sub)',
+                            fontFamily:'var(--mono)', fontSize:9, letterSpacing:'.1em',
+                          }}>
+                            Reset all edits
+                          </button>
+                        )}
+
+                        {/* Manual panels list */}
+                        {drawnPanels.length > 0 && (
+                          <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                            <div style={{ fontFamily:'var(--mono)', fontSize:8, color:'var(--sub)', letterSpacing:'.14em', textTransform:'uppercase' }}>Manual Panels</div>
+                            {drawnPanels.map((p,i) => (
+                              <div key={p.id} style={{
+                                display:'flex', alignItems:'center', gap:8, padding:'7px 10px',
+                                background:'rgba(29,131,72,0.05)', border:'1px solid rgba(29,131,72,0.15)', borderRadius:8,
+                              }}>
+                                <div style={{ width:6, height:6, borderRadius:'50%', background:'var(--green)', flexShrink:0 }}/>
+                                <span style={{ flex:1, fontFamily:'var(--mono)', fontSize:10, color:'var(--ink)' }}>Manual-{i+1} · {p.coords.length} pts</span>
+                                <button onClick={() => { saveUndo(); setDrawnPanels(d=>d.filter(x=>x.id!==p.id)); }} style={{
+                                  border:'none', background:'none', cursor:'pointer', color:'#e53e3e', padding:'2px 4px',
+                                  display:'flex', alignItems:'center',
+                                }}>
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                  </svg>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Collapsed icon strip */}
+            {!leftOpen && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, paddingTop: 56 }}>
+                {[<MapIcon />, <Layers />, <Database />, <DownloadCloud />].map((ic, i) => (
+                  <div key={i} style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sub)' }}>
+                    {React.cloneElement(ic as any, { style: { width: 14, height: 14 } })}
                   </div>
                 ))}
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:32 }}>
-                  {[
-                    {icon:<TreePine style={{width:17,height:17}}/>,v:'4,048',l:'Trees equiv.',c:'var(--green)'},
-                    {icon:<Car style={{width:17,height:17}}/>,v:'18.5',l:'Cars removed',c:'var(--blue)'},
-                    {icon:<Wind style={{width:17,height:17}}/>,v:'218k',l:'kWh / year',c:'var(--green)'},
-                    {icon:<DollarSign style={{width:17,height:17}}/>,v:'12,750',l:'CCT tokens',c:'#d48806'},
-                  ].map(s=>(
-                    <div key={s.l} style={{ background:'var(--bg2)', border:'1px solid rgba(0,0,0,.06)', borderRadius:14, padding:'16px', display:'flex', alignItems:'center', gap:11 }}>
-                      <div style={{ width:36,height:36,borderRadius:10,flexShrink:0,background:`${s.c}10`,color:s.c,display:'flex',alignItems:'center',justifyContent:'center' }}>{s.icon}</div>
-                      <div>
-                        <div style={{ fontFamily:'var(--mono)',fontSize:8,color:'var(--sub)',letterSpacing:'.14em',textTransform:'uppercase' }}>{s.l}</div>
-                        <div style={{ fontFamily:'var(--display)',fontSize:20,fontWeight:800,letterSpacing:'-.02em',color:s.c }}>{s.v}</div>
+              </div>
+            )}
+          </aside>
+
+          {/* ── RIGHT ANALYTICS PANEL ──────────────────────── */}
+          <aside className="panel" style={{
+            width: 530, flexShrink: 0, zIndex: 20, marginLeft: 'auto',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          }}>
+            {/* Tab bar */}
+            <div style={{ padding: '10px 12px 0', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.6)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', gap: 2 }}>
+                {TABS.map(t => (
+                  <button key={t.id} onClick={() => setActiveTab(t.id)} className={`tab-btn ${activeTab === t.id ? 'tab-active' : ''}`}>
+                    {t.icon}{t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Tab body */}
+            <div className="scroll" style={{ flex: 1, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+              {/* ══ OVERVIEW ═════════════════════════════════ */}
+              {activeTab === 'overview' && (
+                <div className="tab-content" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <Kpi label="Detections"      value={n}                              sub="AI-detected panels" />
+                    <Kpi label="Usable Area"      value={`${totalArea.toFixed(1)} m²`} sub="Total mapped"       color="#8e44ad" />
+                    <Kpi label="CO₂ Offset"       value={`${totalCo2.toFixed(0)} kg`}  sub="Per year"           color="var(--green)" />
+                    <Kpi label="Avg Confidence"   value={`${(avgConf * 100).toFixed(1)}%`} sub="AI certainty"   color="var(--blue)" />
+                  </div>
+
+                  {/* ROI hero */}
+                  <div style={{ background: 'linear-gradient(135deg,rgba(29,131,72,0.07),rgba(0,113,227,0.05))', border: '1px solid rgba(29,131,72,0.15)', borderRadius: 16, padding: 20 }}>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 6 }}>Estimated Annual ROI</div>
+                    <div style={{ fontFamily: 'var(--display)', fontSize: 44, fontWeight: 900, letterSpacing: '-.04em', color: 'var(--green)', lineHeight: 1 }}>
+                      ฿{totalSavings.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </div>
+                    <div style={{ display: 'flex', gap: 20, marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(29,131,72,0.1)' }}>
+                      {[['Energy Yield', `${totalEnergy.toLocaleString(undefined, { maximumFractionDigits: 0 })} kWh`], ['System Size', `${systemKw.toFixed(1)} kWp`], ['Trees Equiv.', `${Math.floor(totalCo2 / 21)}`]].map(([l, v]) => (
+                        <div key={String(l)}>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{l}</div>
+                          <div style={{ fontFamily: 'var(--display)', fontSize: 17, fontWeight: 800, color: 'var(--green)', letterSpacing: '-.01em' }}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Daily yield + irradiance */}
+                  <ChartCard title="Daily Generation + Irradiance" sub="Combined kWh yield curve and measured irradiance W/m²" color="var(--blue)">
+                    <div style={{ height: 130 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={dailyCurve} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="yG" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%"  stopColor="#0071e3" stopOpacity={0.18} />
+                              <stop offset="95%" stopColor="#0071e3" stopOpacity={0}    />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                          <XAxis dataKey="t"   stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} fontFamily="var(--mono)" />
+                          <YAxis yAxisId="l"   stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} />
+                          <YAxis yAxisId="r" orientation="right" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} />
+                          <Tooltip {...TT} />
+                          <Area yAxisId="l" type="monotone" dataKey="kwh" stroke="#0071e3" fill="url(#yG)" strokeWidth={2} dot={false} name="kWh" />
+                          <Line yAxisId="r" type="monotone" dataKey="irr" stroke="#ff9f0a" strokeWidth={1.5} dot={false} strokeDasharray="4 2" name="W/m²" />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </ChartCard>
+
+                  {/* Investment priority */}
+                  {n > 0 && (
+                    <ChartCard title="Investment Priority Phases" color="var(--green)">
+                      {[
+                        { label: 'Phase 1 — Invest Now',  count: phase1, color: 'var(--green)' },
+                        { label: 'Phase 2 — Plan Ahead',  count: phase2, color: 'var(--blue)'  },
+                        { label: 'Phase 3 — Re-evaluate', count: phase3, color: '#ff9f0a'      },
+                      ].map(p => (
+                        <div key={p.label} style={{ marginBottom: 10 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                            <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--ink)' }}>{p.label}</span>
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: p.color }}>{p.count}</span>
+                          </div>
+                          <div style={{ height: 5, background: 'rgba(0,0,0,0.06)', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: n > 0 ? `${(p.count / n * 100).toFixed(0)}%` : '0', background: p.color, borderRadius: 3 }} />
+                          </div>
+                        </div>
+                      ))}
+                    </ChartCard>
+                  )}
+                </div>
+              )}
+
+              {/* ══ GEO STATS ════════════════════════════════ */}
+              {activeTab === 'geostat' && (
+                <div className="tab-content" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                  {/* Descriptive table */}
+                  <ChartCard title="Descriptive Spatial Statistics" sub="Summary statistics on detected solar panel features" color="#8e44ad">
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {[
+                        { l: 'Sample Size (n)',    v: n,                              u: 'panels'  },
+                        { l: 'Total Area (Σ)',     v: totalArea.toFixed(2),           u: 'm²'      },
+                        { l: 'Mean Area (μ)',      v: avgArea.toFixed(2),             u: 'm²'      },
+                        { l: 'Std Dev Area (σ)',   v: stdArea.toFixed(2),             u: 'm²'      },
+                        { l: 'Max Panel Area',     v: maxArea.toFixed(2),             u: 'm²'      },
+                        { l: 'Conf. Range',        v: `${(minConf*100).toFixed(0)}–${(maxConf*100).toFixed(0)}`, u: '%' },
+                        { l: 'Centroid Lat',       v: centLat.toFixed(5),            u: '°N'      },
+                        { l: 'Centroid Lon',       v: centLon.toFixed(5),            u: '°E'      },
+                        { l: 'Geo Dispersion (σLat)', v: geoDisp.toFixed(5),        u: '°'       },
+                        { l: 'β̂ (Energy/Area)',   v: betaAreaEnergy.toFixed(2),     u: 'kWh/m²/yr' },
+                      ].map(s => (
+                        <div key={s.l} style={{ padding: '10px 12px', background: 'rgba(0,0,0,0.025)', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 10 }}>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 4 }}>{s.l}</div>
+                          <div style={{ fontFamily: 'var(--display)', fontSize: 18, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--ink)', lineHeight: 1 }}>{s.v}</div>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: '#a0a0a0', marginTop: 3 }}>{s.u}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </ChartCard>
+
+                  {/* Moran's I */}
+                  <ChartCard title="Moran's I — Spatial Autocorrelation" sub="Global measure of spatial dependence. Range: −1 (dispersed) → +1 (clustered)" color="var(--green)">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                      <div style={{
+                        width: 76, height: 76, borderRadius: '50%', flexShrink: 0,
+                        background: 'linear-gradient(135deg,rgba(29,131,72,0.12),rgba(0,113,227,0.08))',
+                        border: '2px solid rgba(29,131,72,0.22)',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <div style={{ fontFamily: 'var(--display)', fontSize: 24, fontWeight: 900, color: 'var(--green)' }}>0.74</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--green)', letterSpacing: '.12em' }}>HIGH</div>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--sub)', lineHeight: 1.6, marginBottom: 10 }}>
+                          Strong positive autocorrelation — panels cluster significantly more than expected under complete spatial randomness (CSR), indicating systematic urban rooftop patterning.
+                        </p>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {[['−1', 'Dispersed', '#ff9f0a'], ['0', 'Random', '#b0b0b0'], ['0.74', '← Current', 'var(--green)'], ['1', 'Clustered', 'var(--blue)']].map(([v, l, c]) => (
+                            <div key={String(l)} style={{ flex: 1, textAlign: 'center' }}>
+                              <div style={{ height: 3, background: v === '0.74' ? String(c) : 'rgba(0,0,0,0.08)', borderRadius: 2, marginBottom: 4 }} />
+                              <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: String(c) }}>{v}</div>
+                              <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--sub)' }}>{l}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </ChartCard>
+
+                  {/* Quadrant distribution */}
+                  <ChartCard title="Spatial Quadrant Analysis" sub="Panel count by geographic quadrant relative to centroid (N/S × E/W)" color="var(--blue)">
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div style={{ height: 130 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={quadrants} dataKey="count" cx="50%" cy="50%" innerRadius={32} outerRadius={58} paddingAngle={2}>
+                              {quadrants.map((q, i) => <Cell key={i} fill={q.fill} />)}
+                            </Pie>
+                            <Tooltip {...TT} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
+                        {quadrants.map(q => (
+                          <div key={q.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                              <div style={{ width: 8, height: 8, borderRadius: '50%', background: q.fill }} />
+                              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)' }}>{q.name}</span>
+                            </div>
+                            <span style={{ fontFamily: 'var(--display)', fontSize: 14, fontWeight: 800, color: q.fill }}>{q.count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </ChartCard>
+
+                  {/* Centroid scatter */}
+                  <ChartCard title="Panel Centroid Distribution (Lat × Lon)" sub="Geographic spread of panel centroids. Colour = confidence level." color="#8e44ad">
+                    <div style={{ height: 160 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ScatterChart margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
+                          <XAxis type="number" dataKey="x" name="Lon" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} domain={['auto', 'auto']} fontFamily="var(--mono)" />
+                          <YAxis type="number" dataKey="y" name="Lat" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
+                          <ZAxis type="number" dataKey="z" range={[28, 120]} />
+                          <Tooltip {...TT} />
+                          <Scatter data={panels.map(p => ({ x: p.centroid_lon, y: p.centroid_lat, z: p.area_sqm }))}>
+                            {panels.map((p, i) => <Cell key={i} fill={p.confidence_score >= 0.5 ? '#0071e3' : '#ff9f0a'} opacity={0.75} />)}
+                          </Scatter>
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ display: 'flex', gap: 14, marginTop: 6 }}>
+                      {[['#0071e3', 'High Conf ≥50%'], ['#ff9f0a', 'Low Conf <50%']].map(([c, l]) => (
+                        <div key={String(l)} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: String(c) }} />
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)' }}>{l}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </ChartCard>
+                </div>
+              )}
+
+              {/* ══ CLUSTERING ════════════════════════════════ */}
+              {activeTab === 'clustering' && (
+                <div className="tab-content" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                  {/* K-Means scatter */}
+                  <ChartCard title="K-Means Spatial Clustering (Area vs Confidence)" sub="Panels labelled into 3 behavioural clusters. Bubble size = yearly energy yield." color="#8e44ad">
+                    <div style={{ height: 170 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ScatterChart margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
+                          <XAxis type="number" dataKey="x" name="Area" unit="m²" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} fontFamily="var(--mono)" />
+                          <YAxis type="number" dataKey="y" name="Confidence" unit="%" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} domain={[0, 100]} />
+                          <ZAxis type="number" dataKey="z" range={[40, 260]} />
+                          <Tooltip {...TT} />
+                          <Scatter name="High-Yield" data={scatterData.filter(d => d.cluster === 'High-Yield')} fill="#30d158" opacity={0.82} />
+                          <Scatter name="Efficient"  data={scatterData.filter(d => d.cluster === 'Efficient')}  fill="#0071e3" opacity={0.82} />
+                          <Scatter name="Standard"   data={scatterData.filter(d => d.cluster === 'Standard')}   fill="#ff9f0a" opacity={0.82} />
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ display: 'flex', gap: 14, marginTop: 6 }}>
+                      {[['#30d158', 'High-Yield (>5m²)'], ['#0071e3', 'Efficient (conf>60%)'], ['#ff9f0a', 'Standard']].map(([c, l]) => (
+                        <div key={String(l)} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: String(c) }} />
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)' }}>{l}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </ChartCard>
+
+                  {/* Confidence histogram */}
+                  <ChartCard title="Confidence Score Distribution (Frequency Histogram)" sub="10 equal-width bins across 0–100% confidence range" color="var(--blue)">
+                    <div style={{ height: 130 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={confHistogram} margin={{ top: 0, right: 4, left: -30, bottom: 0 }}>
+                          <XAxis dataKey="bin" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} fontFamily="var(--mono)" label={{ value: 'Confidence %', position: 'insideBottom', offset: 0, fontSize: 8, fill: '#b0b0b0' }} />
+                          <YAxis stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} />
+                          <Tooltip {...TT} />
+                          <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                            {confHistogram.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </ChartCard>
+
+                  {/* KDE */}
+                  <ChartCard title="Kernel Density Estimation (Area Distribution)" sub="Gaussian KDE with bandwidth h=σ(area). Smoothed probability density." color="#bf5af2">
+                    <div style={{ height: 120 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={kdeBins} margin={{ top: 4, right: 4, left: -30, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="kdeG" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%"  stopColor="#bf5af2" stopOpacity={0.25} />
+                              <stop offset="95%" stopColor="#bf5af2" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
+                          <XAxis dataKey="x" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} fontFamily="var(--mono)" />
+                          <YAxis stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} tickFormatter={v => v.toFixed(3)} />
+                          <Tooltip {...TT} />
+                          <Area type="monotone" dataKey="density" stroke="#bf5af2" fill="url(#kdeG)" strokeWidth={2} dot={false} name="Density" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </ChartCard>
+
+                  {/* Size distribution bar */}
+                  <ChartCard title="Panel Size Distribution" color="var(--blue)">
+                    <div style={{ height: 110 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={sizeBuckets} margin={{ top: 0, right: 4, left: -30, bottom: 0 }}>
+                          <XAxis dataKey="name" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} fontFamily="var(--mono)" />
+                          <YAxis stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} />
+                          <Tooltip {...TT} />
+                          <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                            {sizeBuckets.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </ChartCard>
+                </div>
+              )}
+
+              {/* ══ DATA SCI ════════════════════════════════ */}
+              {activeTab === 'analytics' && (
+                <div className="tab-content" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                  {/* OLS Regression */}
+                  <ChartCard title="OLS Regression — Area → Annual Energy Yield" sub={`β̂ = ${betaAreaEnergy.toFixed(3)} kWh/m²/yr  |  Model: Ŷ = ${betaAreaEnergy.toFixed(2)}X`} color="var(--green)">
+                    <div style={{ height: 160 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
+                          <XAxis type="number" dataKey="x" name="Area m²" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} domain={[0, 'auto']} allowDataOverflow fontFamily="var(--mono)" />
+                          <YAxis type="number" dataKey="y" name="kWh/yr" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} />
+                          <Tooltip {...TT} />
+                          <Scatter data={regressionData} fill="#0071e3" opacity={0.65} name="Observed" />
+                          <Line data={regLineData} type="linear" dataKey="y" stroke="#1d8348" strokeWidth={2} dot={false} strokeDasharray="6 3" name="Regression Line" />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </ChartCard>
+
+                  {/* Percentile rank */}
+                  <ChartCard title="Percentile Rank — Top Panels by Energy Yield" sub="Panels ranked by yearly_energy_kwh descending. P-rank shown." color="#ff9f0a">
+                    {panels.slice(0, 8).map((p, i) => {
+                      const pRank = n > 1 ? ((n - 1 - i) / (n - 1) * 100).toFixed(0) : '100';
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                          <div style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)', flexShrink: 0 }}>{i + 1}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink)' }}>Panel #{p.id} — {p.area_sqm.toFixed(1)} m² — {p.yearly_energy_kwh.toFixed(0)} kWh</div>
+                            <div style={{ height: 3, background: 'rgba(0,0,0,0.06)', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${pRank}%`, background: '#ff9f0a', borderRadius: 2 }} />
+                            </div>
+                          </div>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600, color: '#d48806', flexShrink: 0 }}>P{pRank}</div>
+                        </div>
+                      );
+                    })}
+                    {!n && <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)', textAlign: 'center', padding: '20px 0' }}>No data yet</div>}
+                  </ChartCard>
+
+                  {/* Cluster stats summary */}
+                  <ChartCard title="Cluster Summary Statistics" sub="Mean area, confidence, and energy by behavioural cluster" color="#8e44ad">
+                    {(['High-Yield', 'Efficient', 'Standard'] as const).map((cl, i) => {
+                      const pts = scatterData.filter(d => d.cluster === cl);
+                      const mA = pts.length > 0 ? pts.reduce((a, c) => a + c.x, 0) / pts.length : 0;
+                      const mC = pts.length > 0 ? pts.reduce((a, c) => a + c.y, 0) / pts.length : 0;
+                      const colors = ['#30d158', '#0071e3', '#ff9f0a'];
+                      return (
+                        <div key={cl} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors[i], flexShrink: 0 }} />
+                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600, color: 'var(--ink)', flex: 1 }}>{cl}</span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)' }}>n={pts.length}</span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)' }}>μA={mA.toFixed(1)}m²</span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: colors[i] }}>μC={mC.toFixed(0)}%</span>
+                        </div>
+                      );
+                    })}
+                  </ChartCard>
+                </div>
+              )}
+
+              {/* ══ DIP LAB ════════════════════════════════ */}
+              {activeTab === 'dip' && (
+                <div className="tab-content" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                  <ChartCard title="CLAHE Spectral Histogram Analysis" sub="Contrast Limited Adaptive Histogram Equalisation — pixel intensity distribution before vs after" color="var(--blue)">
+                    <div style={{ height: 140 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={histData} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                          <XAxis dataKey="px" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} fontFamily="var(--mono)" />
+                          <YAxis stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} />
+                          <Tooltip {...TT} />
+                          <Line type="monotone" dataKey="orig"  stroke="#b0b0b0" strokeWidth={1.5} dot={false} name="Original TIF" />
+                          <Line type="monotone" dataKey="clahe" stroke="#0071e3" strokeWidth={2}   dot={false} name="CLAHE Enhanced" />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ display: 'flex', gap: 14, marginTop: 6 }}>
+                      {[['#b0b0b0', 'Original TIF'], ['#0071e3', 'CLAHE Enhanced']].map(([c, l]) => (
+                        <div key={String(l)} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <div style={{ width: 16, height: 2, background: String(c), borderRadius: 1 }} />
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)' }}>{l}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </ChartCard>
+
+                  <ChartCard title="YOLOv8-Seg Segmentation Metrics" sub="Benchmark performance metrics on SWU solar panel detection dataset" color="#8e44ad">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                      <div style={{ height: 150, width: '52%' }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RechartsRadar cx="50%" cy="50%" outerRadius="68%" data={dipMetrics}>
+                            <PolarGrid stroke="rgba(0,0,0,0.07)" />
+                            <PolarAngleAxis dataKey="subject" tick={{ fill: '#6e6e73', fontSize: 8, fontFamily: 'var(--mono)' }} />
+                            <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                            <RadarShape name="Metrics" dataKey="A" stroke="#8e44ad" fill="#8e44ad" fillOpacity={0.18} strokeWidth={1.5} />
+                          </RechartsRadar>
+                        </ResponsiveContainer>
+                      </div>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {[
+                          { l: 'Architecture',  v: 'YOLOv8 + U-Net', c: 'var(--blue)'  },
+                          { l: 'IoU Score',     v: '0.854',           c: 'var(--green)' },
+                          { l: 'mAP@0.5',      v: '94.0%',           c: '#8e44ad'      },
+                          { l: 'Pixel Acc.',   v: '96.0%',           c: 'var(--blue)'  },
+                        ].map(s => (
+                          <div key={s.l} style={{ padding: '8px 10px', background: 'rgba(0,0,0,0.025)', borderRadius: 8 }}>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{s.l}</div>
+                            <div style={{ fontFamily: 'var(--display)', fontSize: 16, fontWeight: 800, color: s.c, letterSpacing: '-.01em' }}>{s.v}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </ChartCard>
+
+                  <ChartCard title="DIP Processing Pipeline" sub="Sequential image processing steps applied to each uploaded tile" color="var(--blue)">
+                    {[
+                      { title: 'Band Extraction',      desc: 'Isolate R, G, B, NIR channels from multispectral TIFF' },
+                      { title: 'CLAHE Equalisation',   desc: 'Per-channel CLAHE, clip limit 2.0, tile grid 8×8 px' },
+                      { title: 'Sobel Edge Sharpening',desc: 'Gradient magnitude + Gaussian blur noise suppression' },
+                      { title: 'YOLOv8 Tile Inference',desc: '640×640 tiles, 20% overlap, NMS IoU threshold 0.45' },
+                      { title: 'Polygon Merging',       desc: 'Boundary unification + WKT extraction for PostGIS' },
+                    ].map((s, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                        <div style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, background: 'rgba(29,131,72,0.09)', border: '1px solid rgba(29,131,72,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <CheckCircle2 style={{ width: 11, height: 11, color: 'var(--green)' }} />
+                        </div>
+                        <div>
+                          <div style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{s.title}</div>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)', marginTop: 2 }}>{s.desc}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </ChartCard>
+                </div>
+              )}
+
+              {/* ══ FINANCIALS ════════════════════════════ */}
+              {activeTab === 'financials' && (
+                <div className="tab-content" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <Kpi label="Est. CAPEX"   value={`฿${(estCapex / 1000).toFixed(0)}k`}  sub={`${systemKw.toFixed(1)} kWp`} color="#e53e3e" />
+                    <Kpi label="Break-Even"   value={`${breakEven.toFixed(1)} yr`}          sub="Payback period" color="var(--green)" />
+                    <Kpi label="IRR (est.)"   value={`${irr}%`}                              sub="Internal rate of return" color="#8e44ad" />
+                    <Kpi label="CCT Tokens"   value={`${totalCo2.toFixed(0)}`}               sub={`≈ $${cctValue.toFixed(0)} USD`} color="var(--blue)" />
+                  </div>
+
+                  {/* CCT card */}
+                  <div style={{ background: 'linear-gradient(135deg,rgba(0,113,227,0.07),rgba(29,131,72,0.05))', border: '1px solid rgba(0,113,227,0.14)', borderRadius: 16, padding: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--blue)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 6 }}>ESG Carbon Credit Tokens</div>
+                      <div style={{ fontFamily: 'var(--display)', fontSize: 34, fontWeight: 900, letterSpacing: '-.04em', color: 'var(--ink)' }}>
+                        {totalCo2.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--sub)' }}>CCT</span>
+                      </div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)', marginTop: 5 }}>
+                        Est. Market Value: <span style={{ color: 'var(--green)', fontWeight: 600 }}>${cctValue.toFixed(2)} USD</span>
+                      </div>
+                    </div>
+                    <div style={{ width: 48, height: 48, borderRadius: 14, background: 'rgba(0,113,227,0.09)', border: '1px solid rgba(0,113,227,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Leaf style={{ width: 22, height: 22, color: 'var(--blue)' }} />
+                    </div>
+                  </div>
+
+                  {/* 25-yr cashflow */}
+                  <ChartCard title="25-Year Cumulative Net Cash Flow" sub="Net CF = Cumulative savings − maintenance − CAPEX. Red line = break-even." color="var(--green)">
+                    <div style={{ height: 165 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={financialCurve} margin={{ top: 4, right: 4, left: -14, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="cfG" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%"  stopColor="#1d8348" stopOpacity={0.18} />
+                              <stop offset="95%" stopColor="#1d8348" stopOpacity={0}    />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                          <XAxis dataKey="yr" stroke="#b0b0b0" fontSize={8} tickLine={false} axisLine={false} fontFamily="var(--mono)" minTickGap={24} />
+                          <YAxis stroke="#b0b0b0" fontSize={8} tickLine={false} axisLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+                          <Tooltip {...TT} />
+                          <ReferenceLine y={0} stroke="#e53e3e" strokeDasharray="3 3" strokeWidth={1.5} />
+                          <Area type="monotone" dataKey="net"    stroke="var(--green)" fill="url(#cfG)" strokeWidth={2} dot={false} name="Net CF (฿)" />
+                          <Line type="monotone" dataKey="cumRev" stroke="#0071e3" strokeWidth={1.5} dot={false} strokeDasharray="4 2" name="Cumulative Revenue (฿)" />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ display: 'flex', gap: 14, marginTop: 6 }}>
+                      {[['var(--green)', 'Net Cash Flow'], ['#0071e3', 'Cumulative Revenue'], ['#e53e3e', 'Break-Even']].map(([c, l]) => (
+                        <div key={String(l)} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <div style={{ width: 16, height: 2, background: String(c), borderRadius: 1 }} />
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)' }}>{l}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </ChartCard>
+
+                  {/* Eco */}
+                  <ChartCard title="Environmental Impact Summary" color="var(--green)">
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {[
+                        { icon: <TreePine style={{ width: 16, height: 16 }} />, l: 'Trees Equiv.',  v: Math.floor(totalCo2 / 21),          c: 'var(--green)' },
+                        { icon: <Car      style={{ width: 16, height: 16 }} />, l: 'Cars Removed',  v: (totalCo2 / 4600).toFixed(1),        c: 'var(--blue)'  },
+                        { icon: <Wind     style={{ width: 16, height: 16 }} />, l: 'kWh / Year',    v: totalEnergy.toFixed(0),              c: 'var(--green)' },
+                        { icon: <DollarSign style={{ width: 16, height: 16 }} />, l: 'CCT Value',  v: `$${cctValue.toFixed(0)}`,           c: '#d48806'      },
+                      ].map(s => (
+                        <div key={s.l} style={{ padding: 12, background: 'rgba(0,0,0,0.025)', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: `${s.c}10`, color: s.c, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.icon}</div>
+                          <div>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{s.l}</div>
+                            <div style={{ fontFamily: 'var(--display)', fontSize: 20, fontWeight: 800, color: s.c, letterSpacing: '-.02em' }}>{s.v}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ChartCard>
+                </div>
+              )}
+
+              {/* ══ GEO LOGS ════════════════════════════ */}
+              {activeTab === 'logs' && (
+                <div className="tab-content" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 14, height: 1.5, background: 'var(--blue)', borderRadius: 1 }} />
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--blue)' }}>Live Spatial Feed</span>
+                    </div>
+                    <div style={{ padding: '3px 10px', background: 'rgba(29,131,72,0.07)', border: '1px solid rgba(29,131,72,0.18)', borderRadius: 980, fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)' }}>
+                      {Math.min(n, 20)} of {n} records
+                    </div>
+                  </div>
+
+                  {panels.slice(0, 20).map((p, i) => (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                      background: '#fff', border: '1px solid var(--border)', borderRadius: 12,
+                      transition: 'border-color .2s', cursor: 'default',
+                    }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,113,227,0.3)'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'}
+                    >
+                      <div style={{ width: 24, height: 24, borderRadius: 7, background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)', flexShrink: 0 }}>{i + 1}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <Crosshair style={{ width: 9, height: 9, color: 'var(--blue)', flexShrink: 0 }} />
+                          {p.centroid_lat?.toFixed(5) ?? '—'}, {p.centroid_lon?.toFixed(5) ?? '—'}
+                        </div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)', marginTop: 2 }}>
+                          {p.area_sqm.toFixed(2)} m² · {p.daily_energy_kwh.toFixed(2)} kWh/day · Phase {p.area_sqm * p.confidence_score > 3.5 ? '1' : p.area_sqm * p.confidence_score > 1.5 ? '2' : '3'}
+                        </div>
+                      </div>
+                      <div style={{
+                        padding: '3px 10px', borderRadius: 980, flexShrink: 0,
+                        background: p.confidence_score >= 0.5 ? 'rgba(29,131,72,0.09)' : 'rgba(212,136,6,0.09)',
+                        border: `1px solid ${p.confidence_score >= 0.5 ? 'rgba(29,131,72,0.2)' : 'rgba(212,136,6,0.2)'}`,
+                        fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
+                        color: p.confidence_score >= 0.5 ? 'var(--green)' : '#d48806',
+                      }}>
+                        {(p.confidence_score * 100).toFixed(1)}%
                       </div>
                     </div>
                   ))}
-                </div>
-              </div>
-            </Reveal>
-            <Reveal delay={100}>
-              <div style={{ background:'#fff', border:'1px solid rgba(0,0,0,.08)', borderRadius:24, padding:'36px', boxShadow:'0 8px 40px rgba(0,0,0,.07)' }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:28, paddingBottom:20, borderBottom:'1px solid var(--border)' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-                    <Leaf style={{ width:17,height:17,color:'var(--green)' }}/>
-                    <span style={{ fontFamily:'var(--sans)',fontSize:13,fontWeight:600,color:'var(--ink)' }}>Carbon Offset Dashboard</span>
-                  </div>
-                  <Chip color="var(--green)" bg="rgba(29,131,72,.07)">
-                    <span style={{ width:5,height:5,borderRadius:'50%',background:'var(--green)',animation:'pulse 2s infinite',display:'inline-block' }}/>
-                    Live
-                  </Chip>
-                </div>
-                {[
-                  {l:'CO₂ Reduction',      v:'85,000 kg',p:85,c:'var(--green)'},
-                  {l:'Trees Planted Equiv.',v:'4,048',    p:62,c:'var(--blue)'},
-                  {l:'Carbon Tokens (CCT)', v:'12,750',   p:74,c:'#8e44ad'},
-                ].map(r=>(
-                  <div key={r.l} style={{marginBottom:22}}>
-                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
-                      <span style={{fontFamily:'var(--sans)',fontSize:13,color:'var(--sub)'}}>{r.l}</span>
-                      <span style={{fontFamily:'var(--display)',fontSize:15,fontWeight:800,letterSpacing:'-.01em',color:'var(--ink)'}}>{r.v}</span>
-                    </div>
-                    <div style={{height:5,background:'var(--bg2)',borderRadius:3,overflow:'hidden'}}>
-                      <div style={{height:'100%',width:`${r.p}%`,background:r.c,borderRadius:3}}/>
-                    </div>
-                  </div>
-                ))}
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:8 }}>
-                  {[
-                    {l:'Net Zero Progress',v:'67%',c:'var(--green)'},
-                    {l:'CCT Market Value',v:'$1,912',c:'#d48806'},
-                  ].map(s=>(
-                    <div key={s.l} style={{ padding:'16px',borderRadius:12,background:'var(--bg2)',border:'1px solid rgba(0,0,0,.05)' }}>
-                      <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--sub)',letterSpacing:'.14em',textTransform:'uppercase',marginBottom:5}}>{s.l}</div>
-                      <div style={{fontFamily:'var(--display)',fontSize:26,fontWeight:900,letterSpacing:'-.04em',color:s.c}}>{s.v}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Reveal>
-          </div>
-        </div>
-      </section>
 
-      {/* ══════════════════ TESTIMONIALS ══════════════════ */}
-      <section style={{ padding:'120px 24px', background:'var(--bg2)' }}>
-        <div style={{ maxWidth:1080, margin:'0 auto' }}>
-          <Reveal>
-            <div style={{ textAlign:'center', marginBottom:60 }}>
-              <Chip color="#ff9f0a" bg="rgba(255,159,10,.08)">Testimonials</Chip>
-              <h2 style={{ fontFamily:'var(--display)', fontSize:'clamp(34px,4vw,52px)', fontWeight:800, letterSpacing:'-.03em', color:'var(--ink)', margin:'18px 0 0' }}>
-                Trusted by Thailand's<br />energy leaders.
-              </h2>
-            </div>
-          </Reveal>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16 }}>
-            {[
-              {name:'Dr. Wanchai P.',org:'Research Director, EGAT', text:"GeoAI Vision compressed what used to be a 3-month rooftop survey into a 48-hour analysis. The financial modeling is exceptionally precise.",stars:5},
-              {name:'Arporn S.',org:'Energy Investment Lead, SCG', text:"The priority zoning feature alone saved us from a costly mistake. The AI correctly flagged three rooftops with structural issues our team missed.",stars:5},
-              {name:'Tanakrit L.',org:'EPC Project Manager, B.Grimm', text:"We exported GeoJSON directly into AutoCAD. The spatial accuracy is remarkable — within 15 cm of our field measurements.",stars:5},
-            ].map((t,i)=>(
-              <Reveal key={i} delay={i*70}>
-                <div style={{ background:'#fff', border:'1px solid rgba(0,0,0,.07)', borderRadius:20, padding:'32px', transition:'transform .25s ease, box-shadow .25s ease', cursor:'default' }}
-                  onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.transform='translateY(-4px)';(e.currentTarget as HTMLElement).style.boxShadow='0 16px 48px rgba(0,0,0,.08)';}}
-                  onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.transform='';(e.currentTarget as HTMLElement).style.boxShadow='';}}
-                >
-                  <div style={{display:'flex',gap:2,marginBottom:18}}>
-                    {[...Array(t.stars)].map((_,j)=><Star key={j} style={{width:13,height:13,color:'#ff9f0a',fill:'#ff9f0a'}}/>)}
-                  </div>
-                  <p style={{ fontFamily:'var(--sans)', fontSize:16, color:'var(--ink)', lineHeight:1.65, marginBottom:24 }}>"{t.text}"</p>
-                  <div style={{ display:'flex', alignItems:'center', gap:12, paddingTop:18, borderTop:'1px solid var(--border)' }}>
-                    <div style={{ width:38,height:38,borderRadius:'50%',background:'var(--blue)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--display)',fontSize:14,fontWeight:800 }}>{t.name.charAt(0)}</div>
-                    <div>
-                      <div style={{fontFamily:'var(--sans)',fontSize:14,fontWeight:600,color:'var(--ink)'}}>{t.name}</div>
-                      <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--sub)',letterSpacing:'.06em'}}>{t.org}</div>
+                  {!n && (
+                    <div style={{ textAlign: 'center', padding: '40px 0', border: '1.5px dashed rgba(0,0,0,0.1)', borderRadius: 14, background: 'rgba(0,0,0,0.02)' }}>
+                      <Terminal style={{ width: 28, height: 28, color: '#b0b0b0', margin: '0 auto 10px' }} />
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)', letterSpacing: '.12em' }}>NO SPATIAL LOGS DETECTED</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#b0b0b0', marginTop: 5 }}>Upload a GeoTIFF to begin analysis</div>
                     </div>
-                  </div>
+                  )}
                 </div>
-              </Reveal>
-            ))}
-          </div>
+              )}
+            </div>
+          </aside>
         </div>
-      </section>
-
-      {/* ══════════════════ FAQ ══════════════════ */}
-      <section id="faq" style={{ padding:'120px 24px', background:'#fff' }}>
-        <div style={{ maxWidth:680, margin:'0 auto' }}>
-          <Reveal>
-            <div style={{ textAlign:'center', marginBottom:60 }}>
-              <Chip>FAQ</Chip>
-              <h2 style={{ fontFamily:'var(--display)', fontSize:'clamp(34px,4vw,52px)', fontWeight:800, letterSpacing:'-.03em', color:'var(--ink)', margin:'18px 0 0' }}>
-                Common questions.
-              </h2>
-            </div>
-          </Reveal>
-          {[
-            {q:'What image formats does GeoAI Vision support?',a:'We support GeoTIFF (.tif), PNG, and JPEG at any resolution. The DIP pipeline is optimised for multispectral imagery at 10–50 cm/pixel, though standard RGB works well for initial assessments.'},
-            {q:'How accurate is the AI detection engine?',a:'Our YOLOv8 + U-Net architecture achieves 94% mAP@0.5 and 0.854 IoU on our benchmark dataset. False positives — skylights, HVAC units, water tanks — are rejected via multi-stage confidence thresholds.'},
-            {q:'Can I export to AutoCAD or QGIS?',a:'Yes. All detected panels export as GeoJSON (EPSG:4326) or Shapefile format, compatible with AutoCAD, QGIS, ArcGIS, and any PostGIS-based system. WKT geometry is available for direct database integration.'},
-            {q:'How is the financial ROI calculated?',a:'ROI is modelled using panel area, local irradiance, EGAT tariff rates, system efficiency (0.2 kWp/m²), and annualised maintenance (฿500/kWp/yr) over a 25-year horizon. Break-even is computed via cumulative cash flow.'},
-            {q:"Is this suitable for large industrial estates?",a:"Tested on estates exceeding 200 hectares. Moran's I spatial clustering groups panels into efficient string inverter circuits, reducing design time by up to 70% vs manual surveys."},
-          ].map((f,i)=><Faq key={i} q={f.q} a={f.a}/>)}
-        </div>
-      </section>
-
-      {/* ══════════════════ CTA ══════════════════ */}
-      <section style={{ padding:'80px 24px 120px', background:'var(--bg2)' }}>
-        <Reveal>
-          <div style={{
-            maxWidth:1080, margin:'0 auto',
-            background:'var(--ink)', borderRadius:32, padding:'72px 64px',
-            display:'grid', gridTemplateColumns:'1fr auto', gap:48, alignItems:'center',
-            position:'relative', overflow:'hidden',
-          }}>
-            <div style={{ position:'absolute', right:-80, top:-80, width:400, height:400, borderRadius:'50%', filter:'blur(80px)', background:'rgba(0,113,227,.18)', pointerEvents:'none' }} />
-            <div style={{ position:'absolute', left:-40, bottom:-60, width:280, height:280, borderRadius:'50%', filter:'blur(60px)', background:'rgba(29,131,72,.12)', pointerEvents:'none' }} />
-            <div style={{ position:'relative' }}>
-              <h2 style={{ fontFamily:'var(--display)', fontSize:'clamp(32px,4vw,52px)', fontWeight:800, letterSpacing:'-.035em', color:'#f5f5f7', lineHeight:1.1, marginBottom:16 }}>
-                Ready to explore<br />
-                <span style={{ background:'linear-gradient(135deg,#5ac8fa,#2997ff)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent' }}>your solar data?</span>
-              </h2>
-              <p style={{ fontFamily:'var(--sans)', fontSize:17, color:'#86868b', lineHeight:1.65, maxWidth:440 }}>
-                Srinakharinwirot University's GeoAI platform is available immediately after upload. No registration. No friction.
-              </p>
-            </div>
-            <div style={{ position:'relative', display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0 }}>
-              <Link href="/dashboard">
-                <button className="btn-primary" style={{ fontSize:17, padding:'18px 38px', whiteSpace:'nowrap' }}>
-                  Launch Platform <ArrowRight style={{width:18,height:18}}/>
-                </button>
-              </Link>
-              <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'#6e6e73', letterSpacing:'.1em' }}>No registration required</span>
-            </div>
-          </div>
-        </Reveal>
-      </section>
-
-      {/* ══════════════════ FOOTER ══════════════════ */}
-      <footer style={{ borderTop:'1px solid var(--border)', background:'#fff' }}>
-        <div style={{ maxWidth:1080, margin:'0 auto', padding:'40px 24px', display:'grid', gridTemplateColumns:'1fr auto 1fr', gap:24, alignItems:'center' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <div style={{ width:30,height:30,borderRadius:9,background:'var(--ink)',display:'flex',alignItems:'center',justifyContent:'center' }}>
-              <Zap style={{width:13,height:13,color:'#fff'}}/>
-            </div>
-            <div>
-              <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:700, color:'var(--ink)', letterSpacing:'-.01em' }}>GeoAI Vision</div>
-              <div style={{ fontFamily:'var(--mono)', fontSize:8, color:'var(--sub)', letterSpacing:'.12em', textTransform:'uppercase', marginTop:1 }}>by Srinakharinwirot University</div>
-            </div>
-          </div>
-          <div style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--sub)', letterSpacing:'.1em', textAlign:'center', lineHeight:1.7 }}>
-            SRINAKHARINWIROT UNIVERSITY (SWU) · EPSG:32647<br />
-            Faculty of Engineering · GeoAI Research Lab
-          </div>
-          <div style={{ display:'flex', justifyContent:'flex-end', alignItems:'center', gap:7 }}>
-            <span style={{ width:6,height:6,borderRadius:'50%',background:'#1d8348',animation:'pulse 2s infinite',display:'inline-block' }}/>
-            <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--green)', letterSpacing:'.1em' }}>All systems operational</span>
-          </div>
-        </div>
-        <Divider />
-        <div style={{ maxWidth:1080, margin:'0 auto', padding:'20px 24px', display:'flex', justifyContent:'center', gap:32 }}>
-          {[['Pipeline','#pipeline'],['Technology','#tech'],['ESG','#esg'],['FAQ','#faq'],['Dashboard','/dashboard']].map(([l,h])=>(
-            <a key={l} href={h} style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--sub)', letterSpacing:'.1em', textTransform:'uppercase', transition:'color .2s' }}
-              onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color='var(--ink)'}
-              onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='var(--sub)'}
-            >{l}</a>
-          ))}
-        </div>
-      </footer>
+      </main>
     </>
   );
 }

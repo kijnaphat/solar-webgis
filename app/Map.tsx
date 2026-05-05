@@ -278,189 +278,294 @@ export default function MapComponent({ panels, overlayImage, imageBounds, baseMa
     <div style={{ position:'relative', height:'100%', width:'100%' }}>
 
       {/* ══════════════════════════════════════════════════
-          FLOATING EDITOR TOOLBAR  (top-right of map)
+          LEFT SIDE — EDIT DETECTION PANEL
       ══════════════════════════════════════════════════ */}
       <div style={{
-        position: 'absolute', top: 12, right: 12, zIndex: 1000,
-        display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end',
+        position: 'absolute',
+        top: 12,
+        left: 60,
+        zIndex: 1000,
+        width: 252,
+        fontFamily: "'Geist', system-ui, sans-serif",
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
       }}>
 
-        {/* Main edit toggle */}
+        {/* ── Collapsed toggle (always visible) ─────────── */}
         <button
           onClick={() => { setEditMode(e => !e); setDrawMode(false); setDraftCoords([]); }}
           style={{
             display: 'flex', alignItems: 'center', gap: 8,
-            padding: '9px 18px', borderRadius: 980,
-            background: editMode ? '#1d1d1f' : '#fff',
-            border: `1.5px solid ${editMode ? '#1d1d1f' : 'rgba(0,0,0,0.15)'}`,
-            cursor: 'pointer', color: editMode ? '#fff' : '#1d1d1f',
-            fontFamily: "'Geist', sans-serif", fontSize: 13, fontWeight: 600,
-            boxShadow: '0 4px 20px rgba(0,0,0,0.14)',
-            transition: 'all .2s',
+            width: '100%',
+            padding: '10px 14px', borderRadius: 14,
+            background: editMode
+              ? 'rgba(229,62,62,0.92)'
+              : 'rgba(255,255,255,0.92)',
+            backdropFilter: 'saturate(180%) blur(16px)',
+            border: `1.5px solid ${editMode ? 'rgba(229,62,62,0.4)' : 'rgba(0,0,0,0.1)'}`,
+            cursor: 'pointer',
+            color: editMode ? '#fff' : '#1d1d1f',
+            fontSize: 13, fontWeight: 700,
+            boxShadow: editMode
+              ? '0 4px 20px rgba(229,62,62,0.25)'
+              : '0 4px 20px rgba(0,0,0,0.12)',
+            transition: 'all .22s',
+            justifyContent: 'space-between',
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-          </svg>
-          {editMode ? 'Exit Edit Mode' : 'Edit Detections'}
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            {/* Edit pencil icon */}
+            <div style={{
+              width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+              background: editMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.06)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </div>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>
+                {editMode ? 'Exit Edit Mode' : 'Edit Detections'}
+              </div>
+              <div style={{
+                fontFamily: "'Geist Mono', monospace",
+                fontSize: 8, letterSpacing: '.14em', textTransform: 'uppercase',
+                marginTop: 3, opacity: 0.65,
+              }}>
+                {editMode ? (drawMode ? 'DRAW MODE ACTIVE' : 'CLICK RED PANEL TO DELETE') : 'Correct AI errors'}
+              </div>
+            </div>
+          </div>
+          {/* Badge dot when has edits */}
+          {(deletedCount > 0 || drawnCount > 0) && !editMode && (
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%', background: '#e53e3e',
+              border: '2px solid rgba(255,255,255,0.9)', flexShrink: 0,
+            }}/>
+          )}
+          {editMode && (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}>
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          )}
         </button>
 
-        {/* Edit sub-toolbar — shown only in edit mode */}
+        {/* ── Expanded panel (edit mode only) ───────────── */}
         {editMode && (
           <div style={{
-            background: 'rgba(255,255,255,0.95)', backdropFilter: 'saturate(180%) blur(16px)',
-            border: '1px solid rgba(0,0,0,0.09)', borderRadius: 20,
-            padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.13)',
-            minWidth: 230,
+            background: 'rgba(255,255,255,0.95)',
+            backdropFilter: 'saturate(180%) blur(20px)',
+            border: '1px solid rgba(0,0,0,0.09)',
+            borderRadius: 18,
+            overflow: 'hidden',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
           }}>
 
-            {/* Status summary */}
+            {/* Stats row */}
             <div style={{
-              padding: '10px 12px', background: 'rgba(0,0,0,0.03)',
-              border: '1px solid rgba(0,0,0,0.07)', borderRadius: 12,
-              display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4,
+              display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+              borderBottom: '1px solid rgba(0,0,0,0.06)',
             }}>
               {[
-                { label:'AI panels', val: survivingCount, color:'#0071e3' },
-                { label:'Deleted',   val: deletedCount,   color:'#e53e3e' },
-                { label:'Manual',    val: drawnCount,     color:'#1d8348' },
-              ].map(s => (
-                <div key={s.label} style={{ textAlign:'center' }}>
-                  <div style={{ fontFamily:"'Geist', sans-serif", fontSize:18, fontWeight:900, color:s.color, lineHeight:1 }}>{s.val}</div>
-                  <div style={{ fontFamily:"'Geist Mono', monospace", fontSize:8, color:'#6e6e73', letterSpacing:'.1em', textTransform:'uppercase', marginTop:3 }}>{s.label}</div>
+                { label: 'AI Active', val: survivingCount, color: '#0071e3' },
+                { label: 'Deleted',   val: deletedCount,   color: '#e53e3e' },
+                { label: 'Manual',    val: drawnCount,     color: '#1d8348' },
+              ].map((s, i, arr) => (
+                <div key={s.label} style={{
+                  padding: '12px 8px', textAlign: 'center',
+                  borderRight: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none',
+                }}>
+                  <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 22, fontWeight: 900, color: s.color, lineHeight: 1 }}>{s.val}</div>
+                  <div style={{ fontFamily: "'Geist Mono', monospace", fontSize: 8, color: '#6e6e73', letterSpacing: '.1em', textTransform: 'uppercase', marginTop: 4 }}>{s.label}</div>
                 </div>
               ))}
             </div>
 
-            {/* Instructions */}
-            <div style={{
-              padding: '8px 10px', background: drawMode ? 'rgba(0,113,227,0.06)' : 'rgba(0,0,0,0.025)',
-              border: `1px solid ${drawMode ? 'rgba(0,113,227,0.2)' : 'rgba(0,0,0,0.07)'}`,
-              borderRadius: 10,
-            }}>
-              <div style={{ fontFamily:"'Geist Mono', monospace", fontSize:10, color: drawMode ? '#0071e3' : '#6e6e73', lineHeight:1.6 }}>
-                {drawMode
-                  ? `✏ Click map to add vertex\n${draftCoords.length} point${draftCoords.length !== 1 ? 's' : ''} placed${draftCoords.length >= 3 ? ' — ready to finish' : ''}`
-                  : '← Click a red panel to remove it\nor use Draw to add new panels'}
-              </div>
-            </div>
+            <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 9 }}>
 
-            {/* Draw / finish / cancel */}
-            {!drawMode ? (
-              <button
-                onClick={() => { setDrawMode(true); showToast('✏ Click map to place polygon vertices'); }}
-                style={{
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:7,
-                  padding:'10px 14px', borderRadius:10,
-                  background:'rgba(0,113,227,0.08)', border:'1.5px solid rgba(0,113,227,0.25)',
-                  cursor:'pointer', color:'#0071e3',
-                  fontFamily:"'Geist', sans-serif", fontSize:13, fontWeight:600,
-                  transition:'all .18s',
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                </svg>
-                Draw New Panel
-              </button>
-            ) : (
-              <div style={{ display:'flex', gap:7 }}>
+              {/* Context hint */}
+              <div style={{
+                padding: '9px 11px',
+                borderRadius: 10,
+                background: drawMode ? 'rgba(0,113,227,0.07)' : 'rgba(229,62,62,0.05)',
+                border: `1px solid ${drawMode ? 'rgba(0,113,227,0.2)' : 'rgba(229,62,62,0.18)'}`,
+                display: 'flex', alignItems: 'flex-start', gap: 8,
+              }}>
+                {/* icon */}
+                <div style={{ flexShrink: 0, marginTop: 1 }}>
+                  {drawMode ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0071e3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                    </svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#e53e3e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                  )}
+                </div>
+                <span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 10, lineHeight: 1.6, color: drawMode ? '#0071e3' : '#e53e3e' }}>
+                  {drawMode
+                    ? `Click map to add vertex · ${draftCoords.length} pt${draftCoords.length !== 1 ? 's' : ''} placed${draftCoords.length >= 3 ? ' — ready!' : ''}`
+                    : 'Click any red panel on the map to mark as false-positive'}
+                </span>
+              </div>
+
+              {/* Draw / Finish / Cancel */}
+              {!drawMode ? (
                 <button
-                  onClick={handleCompleteDraw}
-                  disabled={draftCoords.length < 3}
+                  onClick={() => { setDrawMode(true); showToast('✏ Click map to place polygon vertices'); }}
                   style={{
-                    flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                    padding:'9px', borderRadius:10,
-                    background: draftCoords.length >= 3 ? 'rgba(29,131,72,0.09)' : 'rgba(0,0,0,0.04)',
-                    border: `1.5px solid ${draftCoords.length >= 3 ? 'rgba(29,131,72,0.3)' : 'rgba(0,0,0,0.1)'}`,
-                    cursor: draftCoords.length >= 3 ? 'pointer' : 'not-allowed',
-                    color: draftCoords.length >= 3 ? '#1d8348' : '#a0a0a0',
-                    fontFamily:"'Geist', sans-serif", fontSize:12, fontWeight:600,
-                    transition:'all .18s',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                    padding: '10px', borderRadius: 10,
+                    background: 'rgba(0,113,227,0.08)', border: '1.5px solid rgba(0,113,227,0.25)',
+                    cursor: 'pointer', color: '#0071e3', fontSize: 12, fontWeight: 600,
+                    transition: 'all .18s',
                   }}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12"/>
+                    <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
                   </svg>
-                  Finish ({draftCoords.length}pts)
+                  Draw New Panel
                 </button>
+              ) : (
+                <div style={{ display: 'flex', gap: 7 }}>
+                  <button
+                    onClick={handleCompleteDraw}
+                    disabled={draftCoords.length < 3}
+                    style={{
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      padding: '9px', borderRadius: 10,
+                      background: draftCoords.length >= 3 ? '#1d8348' : 'rgba(0,0,0,0.04)',
+                      border: 'none',
+                      cursor: draftCoords.length >= 3 ? 'pointer' : 'not-allowed',
+                      color: draftCoords.length >= 3 ? '#fff' : '#a0a0a0',
+                      fontSize: 12, fontWeight: 600, transition: 'all .18s',
+                      boxShadow: draftCoords.length >= 3 ? '0 2px 8px rgba(29,131,72,0.3)' : 'none',
+                      opacity: draftCoords.length < 3 ? 0.5 : 1,
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    Finish ({draftCoords.length}pts)
+                  </button>
+                  <button
+                    onClick={handleCancelDraw}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '9px 12px', borderRadius: 10,
+                      background: 'rgba(229,62,62,0.07)', border: '1.5px solid rgba(229,62,62,0.2)',
+                      cursor: 'pointer', color: '#e53e3e', fontSize: 12, fontWeight: 600,
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
+              )}
+
+              {/* Divider */}
+              <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', margin: '2px 0' }} />
+
+              {/* Undo + Export */}
+              <div style={{ display: 'flex', gap: 7 }}>
                 <button
-                  onClick={handleCancelDraw}
+                  onClick={handleUndo}
+                  disabled={!undoStack.length}
                   style={{
-                    display:'flex', alignItems:'center', justifyContent:'center',
-                    padding:'9px 12px', borderRadius:10,
-                    background:'rgba(229,62,62,0.07)', border:'1.5px solid rgba(229,62,62,0.2)',
-                    cursor:'pointer', color:'#e53e3e',
-                    fontFamily:"'Geist', sans-serif", fontSize:12, fontWeight:600,
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                    padding: '8px', borderRadius: 10,
+                    background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.08)',
+                    cursor: undoStack.length ? 'pointer' : 'not-allowed',
+                    color: undoStack.length ? '#1d1d1f' : '#c0c0c0',
+                    fontSize: 11, fontWeight: 600, opacity: undoStack.length ? 1 : 0.45,
+                    transition: 'all .15s',
                   }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
                   </svg>
+                  Undo
+                </button>
+                <button
+                  onClick={handleExport}
+                  style={{
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                    padding: '8px', borderRadius: 10,
+                    background: 'rgba(29,131,72,0.08)', border: '1.5px solid rgba(29,131,72,0.22)',
+                    cursor: 'pointer', color: '#1d8348', fontSize: 11, fontWeight: 600,
+                    transition: 'all .15s',
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Export
                 </button>
               </div>
-            )}
 
-            {/* Undo / Export row */}
-            <div style={{ display:'flex', gap:7 }}>
-              <button
-                onClick={handleUndo}
-                disabled={!undoStack.length}
-                style={{
-                  flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                  padding:'9px', borderRadius:10,
-                  background:'rgba(0,0,0,0.03)', border:'1px solid rgba(0,0,0,0.09)',
-                  cursor: undoStack.length ? 'pointer' : 'not-allowed',
-                  color: undoStack.length ? '#1d1d1f' : '#c0c0c0',
-                  fontFamily:"'Geist', sans-serif", fontSize:12, fontWeight:600,
-                  transition:'all .18s',
-                }}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
-                </svg>
-                Undo
-              </button>
-              <button
-                onClick={handleExport}
-                style={{
-                  flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                  padding:'9px', borderRadius:10,
-                  background:'rgba(29,131,72,0.08)', border:'1.5px solid rgba(29,131,72,0.25)',
-                  cursor:'pointer', color:'#1d8348',
-                  fontFamily:"'Geist', sans-serif", fontSize:12, fontWeight:600,
-                  transition:'all .18s',
-                }}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                Export
-              </button>
+              {/* Manual panel list */}
+              {drawnCount > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <div style={{ fontFamily: "'Geist Mono', monospace", fontSize: 8, color: '#a0a0a0', letterSpacing: '.14em', textTransform: 'uppercase' }}>
+                    Manual Panels
+                  </div>
+                  {drawnPanels.map((p, i) => (
+                    <div key={p.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '7px 10px', borderRadius: 9,
+                      background: 'rgba(29,131,72,0.05)', border: '1px solid rgba(29,131,72,0.14)',
+                    }}>
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#1d8348', flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontFamily: "'Geist Mono', monospace", fontSize: 9, color: '#1d1d1f' }}>
+                        Manual-{i + 1} · {p.coords.length} pts
+                      </span>
+                      <button
+                        onClick={() => handleDeleteDrawn(p.id)}
+                        style={{
+                          border: 'none', background: 'none', cursor: 'pointer',
+                          color: '#e53e3e', padding: '2px', borderRadius: 4,
+                          display: 'flex', alignItems: 'center',
+                          opacity: 0.7,
+                        }}
+                        title="Remove"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Reset */}
+              {(deletedCount > 0 || drawnCount > 0) && (
+                <button
+                  onClick={() => {
+                    if (!confirm(`Reset all edits? (${deletedCount} deletions + ${drawnCount} manual panels)`)) return;
+                    saveUndo();
+                    setDeletedIds(new Set());
+                    setDrawnPanels([]);
+                    showToast('↺ All edits reset');
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                    padding: '7px', borderRadius: 10,
+                    background: 'transparent', border: '1px solid rgba(0,0,0,0.08)',
+                    cursor: 'pointer', color: '#6e6e73',
+                    fontFamily: "'Geist Mono', monospace", fontSize: 9, letterSpacing: '.1em',
+                    marginTop: 2,
+                  }}
+                >
+                  ↺ Reset all edits
+                </button>
+              )}
             </div>
-
-            {/* Reset all */}
-            {(deletedCount > 0 || drawnCount > 0) && (
-              <button
-                onClick={() => {
-                  if (!confirm(`Reset all edits? (${deletedCount} deletions + ${drawnCount} manual panels)`)) return;
-                  saveUndo();
-                  setDeletedIds(new Set());
-                  setDrawnPanels([]);
-                  showToast('↺ All edits reset');
-                }}
-                style={{
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                  padding:'8px', borderRadius:10,
-                  background:'transparent', border:'1px solid rgba(0,0,0,0.09)',
-                  cursor:'pointer', color:'#6e6e73',
-                  fontFamily:"'Geist Mono', monospace", fontSize:10, letterSpacing:'.1em',
-                }}
-              >
-                Reset all edits
-              </button>
-            )}
           </div>
         )}
       </div>
@@ -470,13 +575,13 @@ export default function MapComponent({ panels, overlayImage, imageBounds, baseMa
       ══════════════════════════════════════════════════ */}
       {toast && (
         <div style={{
-          position:'absolute', bottom:24, left:'50%', transform:'translateX(-50%)',
-          zIndex:1001, background:'rgba(29,29,31,0.92)', backdropFilter:'blur(12px)',
-          color:'#fff', padding:'10px 22px', borderRadius:980,
-          fontFamily:"'Geist', sans-serif", fontSize:13, fontWeight:500,
-          boxShadow:'0 4px 24px rgba(0,0,0,0.2)',
-          animation:'toastIn .22s ease',
-          whiteSpace:'nowrap',
+          position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1001, background: 'rgba(29,29,31,0.92)', backdropFilter: 'blur(12px)',
+          color: '#fff', padding: '10px 22px', borderRadius: 980,
+          fontFamily: "'Geist', sans-serif", fontSize: 13, fontWeight: 500,
+          boxShadow: '0 4px 24px rgba(0,0,0,0.2)',
+          animation: 'toastIn .22s ease',
+          whiteSpace: 'nowrap',
         }}>
           {toast}
         </div>
@@ -487,15 +592,16 @@ export default function MapComponent({ panels, overlayImage, imageBounds, baseMa
       ══════════════════════════════════════════════════ */}
       {drawMode && (
         <div style={{
-          position:'absolute', top:14, left:'50%', transform:'translateX(-50%)',
-          zIndex:1001, background:'rgba(0,113,227,0.94)', backdropFilter:'blur(8px)',
-          color:'#fff', padding:'7px 20px', borderRadius:980,
-          fontFamily:"'Geist Mono', monospace", fontSize:11, letterSpacing:'.1em',
-          boxShadow:'0 4px 16px rgba(0,113,227,0.3)',
-          display:'flex', alignItems:'center', gap:8,
+          position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1001, background: 'rgba(0,113,227,0.94)', backdropFilter: 'blur(8px)',
+          color: '#fff', padding: '7px 20px', borderRadius: 980,
+          fontFamily: "'Geist Mono', monospace", fontSize: 11, letterSpacing: '.1em',
+          boxShadow: '0 4px 16px rgba(0,113,227,0.3)',
+          display: 'flex', alignItems: 'center', gap: 8,
+          pointerEvents: 'none',
         }}>
-          <span style={{ width:7, height:7, borderRadius:'50%', background:'#fff', animation:'drawPulse 1s infinite', display:'inline-block' }}/>
-          DRAW MODE — click map to place vertices · right-click to cancel last point
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#fff', animation: 'drawPulse 1s infinite', display: 'inline-block' }}/>
+          DRAW MODE — click map to place vertices
         </div>
       )}
 
