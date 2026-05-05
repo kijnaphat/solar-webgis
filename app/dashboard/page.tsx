@@ -577,7 +577,7 @@ export default function SolarWebGIS() {
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, paddingTop: 56 }}>
                 {[<MapIcon />, <Layers />, <Database />, <DownloadCloud />].map((ic, i) => (
                   <div key={i} style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sub)' }}>
-                    {React.cloneElement(ic as React.ReactElement, { style: { width: 14, height: 14 } })}
+                    {React.cloneElement(ic as any, { style: { width: 14, height: 14 } })}
                   </div>
                 ))}
               </div>
