@@ -42,13 +42,14 @@ function useInView(opts = {}) {
 ═══════════════════════════════════════ */
 
 function Reveal({
-  children, delay = 0, y = 28, scale = false, className = '',
+  children, delay = 0, y = 28, scale = false, className = '', style
 }: {
-  children: React.ReactNode; delay?: number; y?: number; scale?: boolean; className?: string;
+  children: React.ReactNode; delay?: number; y?: number; scale?: boolean; className?: string; style?: React.CSSProperties;
 }) {
   const { ref, vis } = useInView();
   return (
     <div ref={ref} className={className} style={{
+      ...style,
       opacity: vis ? 1 : 0,
       transform: vis
         ? 'none'
