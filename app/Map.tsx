@@ -131,10 +131,12 @@ interface DrawnPanel {
 ═══════════════════════════════════════════════════════════ */
 interface MapProps {
   panels: any[];
-  overlayImage?:  string | null;
-  imageBounds?:   [[number,number],[number,number]] | null;
-  baseMap:        string;
-  activeLayers?:  { heatmap?: boolean; stringWiring?: boolean; priority?: boolean };
+  overlayImage?: string | null;
+  imageBounds?: [[number, number], [number, number]] | null;
+  baseMap: string;
+  activeLayers?: { heatmap?: boolean; stringWiring?: boolean; priority?: boolean }; 
+  onDeletePanel?: (id: number | string) => void;
+  [key: string]: any; // 🌟 เติมบรรทัดนี้! แปลว่า "อนุญาตให้รับ Props อื่นๆ ได้ทั้งหมด"
 }
 
 /* ═══════════════════════════════════════════════════════════
