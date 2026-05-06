@@ -514,8 +514,41 @@ export default function SolarWebGIS() {
           borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center',
           justifyContent: 'space-between', padding: '0 20px', flexShrink: 0, zIndex: 50,
         }}>
-          {/* Logo */}
+          {/* Logo + Home button */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* ← Back to Home */}
+            <a
+              href="/"
+              title="Back to Home"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 980,
+                background: 'rgba(0,0,0,0.04)',
+                border: '1px solid rgba(0,0,0,0.1)',
+                textDecoration: 'none', color: 'var(--sub)',
+                fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
+                letterSpacing: '.08em',
+                transition: 'all .18s',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.08)';
+                (e.currentTarget as HTMLElement).style.color = 'var(--ink)';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.04)';
+                (e.currentTarget as HTMLElement).style.color = 'var(--sub)';
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+              Home
+            </a>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+
+            {/* Logo */}
             <div style={{ width: 32, height: 32, borderRadius: 10, background: '#1d1d1f', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
               <Zap style={{ width: 14, height: 14, color: '#fff' }} />
             </div>
