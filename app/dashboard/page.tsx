@@ -134,8 +134,28 @@ export default function SolarWebGIS() {
 
   /* ── Edit-detection state ───────────────────────────── */
   const [deletedIds,  setDeletedIds]  = useState<Set<string|number>>(new Set());
-  const [drawnPanels, setDrawnPanels] = useState<{ id:string; coords:[number,number][]; note:string; source:'manual' }[]>([]);
+  const [drawnPanels, setDrawnPanels] = useState<{
+    id: string; coords: [number,number][]; note: string; source: 'manual';
+    area_sqm: number; yearly_energy_kwh: number; yearly_savings_baht: number;
+    co2_offset_kg: number; confidence_score: number;
+    centroid_lat: number; centroid_lon: number;
+  }[]>([]);
   const [undoStack,   setUndoStack]   = useState<string[]>([]);
+
+  /* Compute polygon area (m²) from lat/lon coords using Shoelace + haversine approximation */
+  const computePolygonArea = useCallback((coords: [number, number][]): number => {
+    if (coords.length < 3) return 0;
+    // Convert to approximate metres using centroid lat
+    const cLat = coords.reduce((s, c) => s + c[0], 0) / coords.length;
+    const mPerDegLat = 111320;
+    const mPerDegLon = 111320 * Math.cos(cLat * Math.PI / 180);
+    const pts = coords.map(([lat, lon]) => [lat * mPerDegLat, lon * mPerDegLon]);
+    let area = 0;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      area += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]);
+    }
+    return Math.abs(area / 2);
+  }, []);
 
   /* Undo helpers — shared with MapComponent via props */
   const saveUndo = useCallback(() => {
@@ -152,8 +172,23 @@ export default function SolarWebGIS() {
     });
   }, []);
 
-  /* visiblePanels = AI panels minus user-deleted ones */
-  const visiblePanels = panels.filter(p => !deletedIds.has(p.id));
+  /* visiblePanels = AI panels minus deleted + manually drawn panels
+     All stats are computed from this single list → update automatically on any edit */
+  const visiblePanels = [
+    ...panels.filter(p => !deletedIds.has(p.id)),
+    ...drawnPanels.map(p => ({
+      id:                 p.id as any,
+      geom:               '',
+      area_sqm:           p.area_sqm,
+      daily_energy_kwh:   p.yearly_energy_kwh / 365,
+      yearly_energy_kwh:  p.yearly_energy_kwh,
+      yearly_savings_baht: p.yearly_savings_baht,
+      co2_offset_kg:      p.co2_offset_kg,
+      confidence_score:   p.confidence_score,
+      centroid_lat:       p.centroid_lat,
+      centroid_lon:       p.centroid_lon,
+    })),
+  ];
 
   useEffect(() => {
     const t = setInterval(() => setIrradiance(Math.floor(790 + Math.random() * 200)), 2200);
@@ -187,8 +222,48 @@ export default function SolarWebGIS() {
   const irr           = breakEven > 0 ? (100 / breakEven).toFixed(1) : '—';
   const cctValue      = totalCo2 * 0.15;
   const moransI       = 0.74;
-  const geoDisp       = n > 0 ? panels.reduce((a, c) => a + Math.abs(c.centroid_lat - centLat), 0) / n : 0;
+  const geoDisp       = n > 0 ? visiblePanels.reduce((a, c) => a + Math.abs(c.centroid_lat - centLat), 0) / n : 0;
   const betaAreaEnergy = totalArea > 0 ? totalEnergy / totalArea : 0;
+
+  /* ── Advanced spatial & DS metrics (all from visiblePanels) ─────── */
+  // Coefficient of Variation (area)
+  const cvArea      = avgArea > 0 ? (stdArea / avgArea) * 100 : 0;
+  // Skewness (area)
+  const skewArea    = n > 2 && stdArea > 0
+    ? visiblePanels.reduce((a, c) => a + Math.pow((c.area_sqm - avgArea) / stdArea, 3), 0) / n
+    : 0;
+  // Excess Kurtosis (area)
+  const kurtArea    = n > 3 && stdArea > 0
+    ? visiblePanels.reduce((a, c) => a + Math.pow((c.area_sqm - avgArea) / stdArea, 4), 0) / n - 3
+    : 0;
+  // R² of area→energy OLS
+  const ssRes       = visiblePanels.reduce((a, c) => a + Math.pow(c.yearly_energy_kwh - betaAreaEnergy * c.area_sqm, 2), 0);
+  const ssTot       = visiblePanels.reduce((a, c) => {
+    const meanE = n > 0 ? totalEnergy / n : 0;
+    return a + Math.pow(c.yearly_energy_kwh - meanE, 2);
+  }, 0);
+  const rSquared    = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+  // Nearest-Neighbour Index (NNI) proxy — uses mean lat/lon distances
+  const nniProxy    = n > 1 ? (() => {
+    const meanDist = visiblePanels.reduce((sum, p) => {
+      const dists = visiblePanels
+        .filter(q => q.id !== p.id)
+        .map(q => Math.sqrt(Math.pow((p.centroid_lat - q.centroid_lat) * 111320, 2) + Math.pow((p.centroid_lon - q.centroid_lon) * 111320 * Math.cos(centLat * Math.PI / 180), 2)));
+      return sum + (dists.length > 0 ? Math.min(...dists) : 0);
+    }, 0) / n;
+    const area_m2  = Math.max(totalArea * 10000, 1);
+    const expected = 0.5 * Math.sqrt(area_m2 / n);
+    return expected > 0 ? meanDist / expected : 0;
+  })() : 0;
+  // Energy density kWh/m² and CO₂ efficiency
+  const energyDensity = totalArea > 0 ? totalEnergy / totalArea : 0;
+  const co2PerM2      = totalArea > 0 ? totalCo2   / totalArea : 0;
+  // Z-score outlier panels (|z| > 2)
+  const zScoreData  = visiblePanels.map(p => ({
+    id: p.id, area: p.area_sqm,
+    z:  stdArea > 0 ? (p.area_sqm - avgArea) / stdArea : 0,
+    conf: p.confidence_score, energy: p.yearly_energy_kwh,
+  })).sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
   const phase1        = visiblePanels.filter(p => p.area_sqm * p.confidence_score > 3.5).length;
   const phase2        = visiblePanels.filter(p => { const s = p.area_sqm * p.confidence_score; return s > 1.5 && s <= 3.5; }).length;
   const phase3        = n - phase1 - phase2;
@@ -231,6 +306,31 @@ export default function SolarWebGIS() {
     { name: 'SW', count: visiblePanels.filter(p => p.centroid_lat <= centLat && p.centroid_lon < centLon).length, fill: '#ff9f0a' },
     { name: 'SE', count: visiblePanels.filter(p => p.centroid_lat <= centLat && p.centroid_lon >= centLon).length, fill: '#bf5af2' },
   ];
+
+  // Spatial Shannon entropy on quadrant distribution
+  const qTotal      = quadrants.reduce((a, q) => a + q.count, 0);
+  const spatEntropy = qTotal > 0
+    ? -quadrants.reduce((a, q) => { const p = q.count/qTotal; return a + (p>0 ? p*Math.log2(p) : 0); }, 0)
+    : 0;
+  const normEntropy = spatEntropy / Math.log2(4); // normalise to [0,1]
+
+  // Ripley's K at 5 distance bins (metres)
+  const rBins = [5, 10, 20, 40, 80];
+  const ripleysK = rBins.map(r => {
+    const count = n > 1 ? visiblePanels.reduce((sum, p) => {
+      return sum + visiblePanels.filter(q => q.id !== p.id && (() => {
+        const dm = Math.sqrt(
+          Math.pow((p.centroid_lat - q.centroid_lat) * 111320, 2) +
+          Math.pow((p.centroid_lon - q.centroid_lon) * 111320 * Math.cos(centLat * Math.PI / 180), 2)
+        );
+        return dm <= r;
+      })()).length;
+    }, 0) : 0;
+    const lambdaHat = n > 0 ? n / Math.max(totalArea * 10000, 1) : 0;
+    const K = lambdaHat > 0 && n > 1 ? count / (n * lambdaHat) : Math.PI * r * r;
+    const Lstat = Math.sqrt(Math.max(K, 0) / Math.PI) - r;
+    return { r, K: parseFloat(K.toFixed(3)), L: parseFloat(Lstat.toFixed(2)), csr: parseFloat((Math.PI * r * r).toFixed(3)) };
+  });
 
   // Simulated KDE — smooth density over area bins
   const kdeBins = Array.from({ length: 20 }, (_, i) => {
@@ -315,26 +415,53 @@ export default function SolarWebGIS() {
     setOverlayImage(null); setImageBounds(null); fetchData();
   };
 
-  const downloadGeoJSON = () => {
-    if (!panels.length) return alert('No spatial data to export.');
-    const gj = {
-      type: 'FeatureCollection', name: 'SWU_Solar_Panels',
-      crs: { type: 'name', properties: { name: 'urn:ogc:def:crs:OGC:1.3:CRS84' } },
-      features: panels.map(p => ({
+  /* ── Edit mode visible to page (for header badge) ──── */
+  const [editMode,    setEditMode]    = useState(false);
+  const [drawMode,    setDrawMode]    = useState(false);
+
+  /* toggle edit — also switches to right tab */
+  const toggleEdit = useCallback(() => {
+    setEditMode(e => !e);
+    setDrawMode(false);
+  }, []);
+
+  /* Export only surviving AI panels + drawn manual panels */
+  const downloadGeoJSON = useCallback(() => {
+    if (!visiblePanels.length) { alert('No spatial data to export.'); return; }
+    const aiPanels      = panels.filter(p => !deletedIds.has(p.id));
+    const features = [
+      ...aiPanels.map(p => ({
         type: 'Feature',
-        properties: { id: p.id, area_sqm: p.area_sqm, energy_kwh_yr: p.yearly_energy_kwh, ai_confidence: p.confidence_score },
+        properties: { id: p.id, source: 'ai', area_sqm: p.area_sqm, energy_kwh_yr: p.yearly_energy_kwh, ai_confidence: p.confidence_score },
         geometry: { type: 'Point', coordinates: [p.centroid_lon, p.centroid_lat] },
       })),
-    };
-    const a = document.createElement('a');
-    a.href = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(gj, null, 2));
-    a.download = 'swu_solar_spatial.geojson';
+      ...drawnPanels.map(p => ({
+        type: 'Feature',
+        properties: {
+          id: p.id, source: 'manual',
+          area_sqm: p.area_sqm,
+          energy_kwh_yr: p.yearly_energy_kwh,
+          savings_baht_yr: p.yearly_savings_baht,
+          co2_kg_yr: p.co2_offset_kg,
+          vertices: p.coords.length,
+        },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[...p.coords.map(([lat, lon]) => [lon, lat]), [p.coords[0]?.[1] ?? 0, p.coords[0]?.[0] ?? 0]]],
+        },
+      })),
+    ];
+    const gj = { type: 'FeatureCollection', name: 'SWU_Solar_Edited', features };
+    const a  = document.createElement('a');
+    a.href   = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(gj, null, 2));
+    a.download = `solar_edited_${Date.now()}.geojson`;
     document.body.appendChild(a); a.click(); a.remove();
-  };
+  }, [visiblePanels, panels, deletedIds, drawnPanels]);
 
   const TABS = [
     { id: 'overview',  icon: <Globe2         style={{ width: 13, height: 13 }} />, label: 'Overview'  },
     { id: 'geostat',   icon: <Sigma          style={{ width: 13, height: 13 }} />, label: 'Geo Stats' },
+    { id: 'spatial',   icon: <Network        style={{ width: 13, height: 13 }} />, label: 'Spatial'   },
     { id: 'clustering',icon: <LayoutGrid     style={{ width: 13, height: 13 }} />, label: 'Clustering'},
     { id: 'analytics', icon: <BarChart3      style={{ width: 13, height: 13 }} />, label: 'Data Sci'  },
     { id: 'dip',       icon: <FlaskConical   style={{ width: 13, height: 13 }} />, label: 'DIP Lab'   },
@@ -415,7 +542,7 @@ export default function SolarWebGIS() {
             </div>
           </div>
 
-          {/* Right: grade + export */}
+          {/* Right: grade + edit + export */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {n > 0 && (
               <div style={{ padding: '5px 14px', borderRadius: 980, background: grade.bg, border: `1px solid ${grade.c}22` }}>
@@ -423,6 +550,46 @@ export default function SolarWebGIS() {
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: grade.c, marginLeft: 6, letterSpacing: '.1em' }}>{grade.desc}</span>
               </div>
             )}
+            {/* Edit detections toggle */}
+            <button
+              onClick={toggleEdit}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 14px', borderRadius: 980,
+                background: editMode ? '#e53e3e' : 'rgba(0,0,0,0.05)',
+                border: `1.5px solid ${editMode ? '#e53e3e' : 'rgba(0,0,0,0.12)'}`,
+                cursor: 'pointer', color: editMode ? '#fff' : 'var(--ink)',
+                fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
+                boxShadow: editMode ? '0 2px 10px rgba(229,62,62,0.25)' : 'none',
+                transition: 'all .2s', position: 'relative',
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+              {editMode ? 'Exit Edit' : 'Edit'}
+              {(deletedIds.size > 0 || drawnPanels.length > 0) && !editMode && (
+                <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: '#e53e3e', border: '2px solid #fff' }} />
+              )}
+            </button>
+            {/* Refresh button */}
+            <button
+              onClick={() => fetchData()}
+              title="Refresh data from database"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 34, height: 34, borderRadius: 980,
+                background: 'rgba(0,0,0,0.05)', border: '1px solid rgba(0,0,0,0.12)',
+                cursor: 'pointer', color: 'var(--sub)', transition: 'all .2s',
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10"/>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+              </svg>
+            </button>
+            {/* GeoJSON export */}
             <button onClick={downloadGeoJSON} style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 980,
               background: 'rgba(0,113,227,0.08)', border: '1px solid rgba(0,113,227,0.2)',
@@ -444,13 +611,41 @@ export default function SolarWebGIS() {
               imageBounds={imageBounds}
               baseMap={baseMap}
               activeLayers={activeLayers}
+              editMode={editMode}
+              drawMode={drawMode}
+              onDrawModeChange={setDrawMode}
               deletedIds={deletedIds}
               drawnPanels={drawnPanels}
               undoStack={undoStack}
-              onDelete={(id: string|number) => { saveUndo(); setDeletedIds(s => new Set([...s, id])); }}
-              onCompleteDraw={(coords: [number,number][]) => {
+              onDelete={(id: string | number) => { saveUndo(); setDeletedIds(s => new Set([...s, id])); }}
+              onCompleteDraw={(coords: [number, number][]) => {
                 saveUndo();
-                setDrawnPanels(d => [...d, { id:`manual-${Date.now()}`, coords, note:'', source:'manual' as const }]);
+                const areaSqm = computePolygonArea(coords);
+                // Estimate stats using same coefficients as AI panels
+                const kwpPerM2          = 0.2;          // 200 W/m²
+                const peakSunHrs        = 4.5;          // Thailand average peak sun hours
+                const efficiencyFactor  = 0.8;
+                const tariffBaht        = 4.5;          // ฿/kWh
+                const co2PerKwh         = 0.5;          // kg CO₂/kWh
+                const yearlyKwh         = areaSqm * kwpPerM2 * peakSunHrs * 365 * efficiencyFactor;
+                const yearlySavings     = yearlyKwh * tariffBaht;
+                const yearlyCo2         = yearlyKwh * co2PerKwh;
+                const cLat = coords.reduce((s, c) => s + c[0], 0) / coords.length;
+                const cLon = coords.reduce((s, c) => s + c[1], 0) / coords.length;
+                setDrawnPanels(d => [...d, {
+                  id:                  `manual-${Date.now()}`,
+                  coords,
+                  note:                '',
+                  source:              'manual' as const,
+                  area_sqm:            parseFloat(areaSqm.toFixed(3)),
+                  yearly_energy_kwh:   parseFloat(yearlyKwh.toFixed(2)),
+                  yearly_savings_baht: parseFloat(yearlySavings.toFixed(2)),
+                  co2_offset_kg:       parseFloat(yearlyCo2.toFixed(2)),
+                  confidence_score:    1.0,   // user-confirmed = 100%
+                  centroid_lat:        parseFloat(cLat.toFixed(6)),
+                  centroid_lon:        parseFloat(cLon.toFixed(6)),
+                }]);
+                setDrawMode(false);
               }}
               onDeleteDrawn={(id: string) => { saveUndo(); setDrawnPanels(d => d.filter(p => p.id !== id)); }}
               onUndo={handleEditUndo}
@@ -610,6 +805,188 @@ export default function SolarWebGIS() {
                     </div>
                   </div>
                 )}
+
+                {/* ── Edit Detections card ─────────────────────── */}
+                <div style={{
+                  background: editMode ? 'rgba(229,62,62,0.04)' : '#fff',
+                  border: `1.5px solid ${editMode ? 'rgba(229,62,62,0.28)' : 'var(--border)'}`,
+                  borderRadius: 18, padding: 18, transition: 'all .25s',
+                }}>
+                  {/* Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: editMode ? 14 : 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                      <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: editMode ? 'rgba(229,62,62,0.1)' : 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={editMode ? '#e53e3e' : 'var(--sub)'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: 'var(--display)', fontSize: 13, fontWeight: 800, color: editMode ? '#c53030' : 'var(--ink)', lineHeight: 1 }}>Edit Detections</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.1em', textTransform: 'uppercase', marginTop: 3 }}>
+                          {editMode ? (drawMode ? 'DRAW MODE' : 'DELETE MODE') : 'Correct AI errors'}
+                        </div>
+                      </div>
+                    </div>
+                    <button onClick={toggleEdit} style={{
+                      padding: '7px 14px', borderRadius: 980,
+                      background: editMode ? '#e53e3e' : '#1d1d1f',
+                      border: 'none', cursor: 'pointer', color: '#fff',
+                      fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600,
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      boxShadow: editMode ? '0 2px 10px rgba(229,62,62,0.28)' : '0 1px 6px rgba(0,0,0,0.14)',
+                      transition: 'all .2s',
+                    }}>
+                      {editMode ? (
+                        <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Exit</>
+                      ) : (
+                        <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Edit</>
+                      )}
+                    </button>
+                  </div>
+
+                  {editMode && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {/* Stats chips */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                        {[
+                          { label: 'AI Active',  val: n,               color: 'var(--blue)' },
+                          { label: 'Deleted',    val: deletedIds.size,  color: '#e53e3e'     },
+                          { label: 'Manual',     val: drawnPanels.length, color: 'var(--green)' },
+                        ].map(s => (
+                          <div key={s.label} style={{ padding: '8px 6px', borderRadius: 10, textAlign: 'center', background: `${s.color}09`, border: `1px solid ${s.color}22` }}>
+                            <div style={{ fontFamily: 'var(--display)', fontSize: 20, fontWeight: 900, color: s.color, lineHeight: 1 }}>{s.val}</div>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--sub)', letterSpacing: '.1em', textTransform: 'uppercase', marginTop: 3 }}>{s.label}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Mode hint */}
+                      <div style={{
+                        padding: '8px 10px', borderRadius: 10,
+                        background: drawMode ? 'rgba(0,113,227,0.06)' : 'rgba(229,62,62,0.05)',
+                        border: `1px solid ${drawMode ? 'rgba(0,113,227,0.2)' : 'rgba(229,62,62,0.18)'}`,
+                        display: 'flex', alignItems: 'flex-start', gap: 8,
+                      }}>
+                        <span style={{ fontSize: 14, flexShrink: 0, marginTop: -1 }}>{drawMode ? '✏' : '🗑'}</span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)', lineHeight: 1.6 }}>
+                          {drawMode
+                            ? 'Click map to add polygon vertices. Use map toolbar to Finish or Cancel.'
+                            : 'Panels are red on map. Click any to remove as false-positive.'}
+                        </span>
+                      </div>
+
+                      {/* Draw toggle */}
+                      <button onClick={() => setDrawMode(d => !d)} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        padding: '9px', borderRadius: 10,
+                        background: drawMode ? 'rgba(0,113,227,0.09)' : 'rgba(0,0,0,0.04)',
+                        border: `1.5px solid ${drawMode ? 'rgba(0,113,227,0.3)' : 'rgba(0,0,0,0.1)'}`,
+                        cursor: 'pointer', color: drawMode ? 'var(--blue)' : 'var(--ink)',
+                        fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600, transition: 'all .2s',
+                      }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                        </svg>
+                        {drawMode ? '✏ Drawing… click map to add points' : 'Draw New Panel'}
+                      </button>
+
+                      {/* Undo + Export */}
+                      <div style={{ display: 'flex', gap: 7 }}>
+                        <button
+                          onClick={handleEditUndo}
+                          disabled={!undoStack.length}
+                          style={{
+                            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                            padding: '8px', borderRadius: 10,
+                            background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.08)',
+                            cursor: undoStack.length ? 'pointer' : 'not-allowed',
+                            color: undoStack.length ? 'var(--ink)' : '#c0c0c0',
+                            fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 600,
+                            opacity: undoStack.length ? 1 : 0.45,
+                          }}
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
+                          </svg>
+                          Undo
+                        </button>
+                        <button
+                          onClick={downloadGeoJSON}
+                          style={{
+                            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                            padding: '8px', borderRadius: 10,
+                            background: 'rgba(29,131,72,0.08)', border: '1.5px solid rgba(29,131,72,0.25)',
+                            cursor: 'pointer', color: 'var(--green)',
+                            fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 600,
+                          }}
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                          </svg>
+                          Export
+                        </button>
+                      </div>
+
+                      {/* Manual panels list */}
+                      {drawnPanels.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.14em', textTransform: 'uppercase' }}>Manual Panels</div>
+                          {drawnPanels.map((p, i) => (
+                            <div key={p.id} style={{ padding: '8px 10px', background: 'rgba(29,131,72,0.05)', border: '1px solid rgba(29,131,72,0.15)', borderRadius: 10 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', flexShrink: 0 }} />
+                                <span style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink)', fontWeight: 600 }}>Manual-{i + 1}</span>
+                                <button
+                                  onClick={() => { saveUndo(); setDrawnPanels(d => d.filter(x => x.id !== p.id)); }}
+                                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#e53e3e', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center' }}
+                                >
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                  </svg>
+                                </button>
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
+                                {[
+                                  { l: 'Area',    v: `${p.area_sqm.toFixed(1)} m²`              },
+                                  { l: 'Energy',  v: `${p.yearly_energy_kwh.toFixed(0)} kWh/yr`  },
+                                  { l: 'CO₂',     v: `${p.co2_offset_kg.toFixed(0)} kg/yr`       },
+                                ].map(s => (
+                                  <div key={s.l} style={{ textAlign: 'center' }}>
+                                    <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--sub)', letterSpacing: '.1em', textTransform: 'uppercase' }}>{s.l}</div>
+                                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)', fontWeight: 600, marginTop: 2 }}>{s.v}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Reset all */}
+                      {(deletedIds.size > 0 || drawnPanels.length > 0) && (
+                        <button
+                          onClick={() => {
+                            if (!confirm(`Reset all edits? (${deletedIds.size} deletions, ${drawnPanels.length} manual panels)`)) return;
+                            saveUndo();
+                            setDeletedIds(new Set());
+                            setDrawnPanels([]);
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                            padding: '7px', borderRadius: 10,
+                            background: 'transparent', border: '1px solid rgba(0,0,0,0.09)',
+                            cursor: 'pointer', color: 'var(--sub)',
+                            fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '.1em',
+                          }}
+                        >
+                          ↺ Reset all edits
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -721,23 +1098,29 @@ export default function SolarWebGIS() {
                 <div className="tab-content" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
                   {/* Descriptive table */}
-                  <ChartCard title="Descriptive Spatial Statistics" sub="Summary statistics on detected solar panel features" color="#8e44ad">
+                  <ChartCard title="Descriptive Spatial Statistics" sub="All stats recalculate live when panels are edited/deleted" color="#8e44ad">
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       {[
-                        { l: 'Sample Size (n)',    v: n,                              u: 'panels'  },
-                        { l: 'Total Area (Σ)',     v: totalArea.toFixed(2),           u: 'm²'      },
-                        { l: 'Mean Area (μ)',      v: avgArea.toFixed(2),             u: 'm²'      },
-                        { l: 'Std Dev Area (σ)',   v: stdArea.toFixed(2),             u: 'm²'      },
-                        { l: 'Max Panel Area',     v: maxArea.toFixed(2),             u: 'm²'      },
-                        { l: 'Conf. Range',        v: `${(minConf*100).toFixed(0)}–${(maxConf*100).toFixed(0)}`, u: '%' },
-                        { l: 'Centroid Lat',       v: centLat.toFixed(5),            u: '°N'      },
-                        { l: 'Centroid Lon',       v: centLon.toFixed(5),            u: '°E'      },
-                        { l: 'Geo Dispersion (σLat)', v: geoDisp.toFixed(5),        u: '°'       },
-                        { l: 'β̂ (Energy/Area)',   v: betaAreaEnergy.toFixed(2),     u: 'kWh/m²/yr' },
+                        { l: 'Sample Size (n)',    v: n,                                                            u: 'panels'    },
+                        { l: 'Total Area (Σ)',     v: totalArea.toFixed(2),                                        u: 'm²'        },
+                        { l: 'Mean Area (μ)',      v: avgArea.toFixed(2),                                          u: 'm²'        },
+                        { l: 'Std Dev (σ)',        v: stdArea.toFixed(2),                                          u: 'm²'        },
+                        { l: 'CV (σ/μ)',           v: `${cvArea.toFixed(1)}`,                                      u: '%'         },
+                        { l: 'Skewness',           v: skewArea.toFixed(3),                                         u: skewArea > 0 ? 'right-skewed' : 'left-skewed' },
+                        { l: 'Excess Kurtosis',   v: kurtArea.toFixed(3),                                         u: kurtArea > 0 ? 'leptokurtic' : 'platykurtic'  },
+                        { l: 'Conf. Range',        v: `${(minConf*100).toFixed(0)}–${(maxConf*100).toFixed(0)}`,  u: '%'         },
+                        { l: 'Centroid Lat',       v: centLat.toFixed(5),                                          u: '°N'        },
+                        { l: 'Centroid Lon',       v: centLon.toFixed(5),                                          u: '°E'        },
+                        { l: 'Geo Dispersion σ',   v: geoDisp.toFixed(5),                                          u: '°lat'      },
+                        { l: 'β̂ Energy/Area',     v: betaAreaEnergy.toFixed(2),                                  u: 'kWh/m²/yr' },
+                        { l: 'R² (OLS)',           v: rSquared.toFixed(3),                                         u: `fit quality` },
+                        { l: 'NNI Proxy',          v: nniProxy.toFixed(3),                                         u: nniProxy < 1 ? 'clustered' : nniProxy > 1 ? 'dispersed' : 'random' },
+                        { l: 'Spatial Entropy H\'', v: spatEntropy.toFixed(3),                                    u: `bits (${(normEntropy*100).toFixed(0)}% max)` },
+                        { l: 'Energy Density',     v: energyDensity.toFixed(2),                                    u: 'kWh/m²/yr' },
                       ].map(s => (
-                        <div key={s.l} style={{ padding: '10px 12px', background: 'rgba(0,0,0,0.025)', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 10 }}>
-                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 4 }}>{s.l}</div>
-                          <div style={{ fontFamily: 'var(--display)', fontSize: 18, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--ink)', lineHeight: 1 }}>{s.v}</div>
+                        <div key={s.l} style={{ padding: '9px 12px', background: 'rgba(0,0,0,0.025)', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 10 }}>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: '#6e6e73', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 3 }}>{s.l}</div>
+                          <div style={{ fontFamily: 'var(--display)', fontSize: 17, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--ink)', lineHeight: 1 }}>{s.v}</div>
                           <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: '#a0a0a0', marginTop: 3 }}>{s.u}</div>
                         </div>
                       ))}
@@ -823,6 +1206,150 @@ export default function SolarWebGIS() {
                           <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)' }}>{l}</span>
                         </div>
                       ))}
+                    </div>
+                  </ChartCard>
+                </div>
+              )}
+
+              {/* ══ SPATIAL POINT PATTERNS ═══════════════════ */}
+              {activeTab === 'spatial' && (
+                <div className="tab-content" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                  {/* Ripley's K / L statistic */}
+                  <ChartCard title="Ripley's K & L(r)−r — Point Pattern Analysis" sub="L(r)−r > 0 = clustered at radius r · < 0 = dispersed · = 0 = CSR" color="#8e44ad">
+                    <div style={{ height: 150 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={ripleysK} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                          <XAxis dataKey="r" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} fontFamily="var(--mono)" label={{ value: 'r (m)', position: 'insideBottomRight', offset: -4, fontSize: 8, fill: '#b0b0b0' }} />
+                          <YAxis stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} />
+                          <Tooltip {...TT} />
+                          <ReferenceLine y={0} stroke="#a0a0a0" strokeDasharray="4 3" strokeWidth={1} />
+                          <Bar dataKey="L" radius={[4,4,0,0]}>
+                            {ripleysK.map((d, i) => <Cell key={i} fill={d.L > 0 ? '#0071e3' : '#e53e3e'} opacity={0.8} />)}
+                          </Bar>
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ display: 'flex', gap: 14, marginTop: 6 }}>
+                      {[['#0071e3','L(r)−r > 0  Clustered'],['#e53e3e','L(r)−r < 0  Dispersed']].map(([c,l]) => (
+                        <div key={String(l)} style={{ display:'flex', alignItems:'center', gap:5 }}>
+                          <div style={{ width:8, height:8, borderRadius:'50%', background:String(c) }} />
+                          <span style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--sub)' }}>{l}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </ChartCard>
+
+                  {/* Ripley's K raw table */}
+                  <ChartCard title="Ripley's K Table" sub="K(r) vs theoretical CSR K(r) = πr² across 5 radii" color="#8e44ad">
+                    <div style={{ overflowX:'auto' }}>
+                      <table style={{ width:'100%', borderCollapse:'collapse', fontFamily:'var(--mono)', fontSize:10 }}>
+                        <thead>
+                          <tr>
+                            {['r (m)','K(r) obs','K(r) CSR','L(r)−r','Interpretation'].map(h => (
+                              <th key={h} style={{ padding:'6px 8px', textAlign:'left', borderBottom:'1.5px solid rgba(0,0,0,0.07)', color:'var(--sub)', fontSize:8, letterSpacing:'.12em', textTransform:'uppercase', whiteSpace:'nowrap' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ripleysK.map((d,i) => (
+                            <tr key={i} style={{ borderBottom:'1px solid rgba(0,0,0,0.04)' }}>
+                              <td style={{ padding:'7px 8px', fontWeight:600, color:'var(--ink)' }}>{d.r}</td>
+                              <td style={{ padding:'7px 8px', color:'#0071e3' }}>{d.K}</td>
+                              <td style={{ padding:'7px 8px', color:'var(--sub)' }}>{d.csr}</td>
+                              <td style={{ padding:'7px 8px', color: d.L > 0 ? '#0071e3' : '#e53e3e', fontWeight:600 }}>{d.L > 0 ? '+' : ''}{d.L}</td>
+                              <td style={{ padding:'7px 8px', color: d.L > 0 ? '#0071e3' : d.L < 0 ? '#e53e3e' : 'var(--sub)' }}>
+                                {d.L > 0.5 ? 'Strongly clustered' : d.L > 0 ? 'Weakly clustered' : d.L < -0.5 ? 'Strongly dispersed' : d.L < 0 ? 'Weakly dispersed' : 'CSR'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </ChartCard>
+
+                  {/* NNI + Entropy cards */}
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                    {/* NNI */}
+                    <div style={{ background:'#fff', border:'1px solid rgba(0,0,0,0.07)', borderRadius:16, padding:16 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                        <div style={{ width:14, height:1.5, background:'var(--green)', borderRadius:1 }} />
+                        <span style={{ fontFamily:'var(--mono)', fontSize:9, fontWeight:600, letterSpacing:'.18em', textTransform:'uppercase', color:'var(--green)' }}>NNI</span>
+                      </div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:36, fontWeight:900, letterSpacing:'-.04em', color: nniProxy < 1 ? '#0071e3' : nniProxy > 1 ? '#e53e3e' : 'var(--green)', lineHeight:1 }}>
+                        {nniProxy.toFixed(3)}
+                      </div>
+                      <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--sub)', marginTop:6, lineHeight:1.6 }}>
+                        Nearest-Neighbour Index<br/>
+                        <span style={{ color: nniProxy < 1 ? '#0071e3' : nniProxy > 1 ? '#e53e3e' : 'var(--green)', fontWeight:600 }}>
+                          {nniProxy < 0.8 ? 'Strongly Clustered' : nniProxy < 1 ? 'Mildly Clustered' : nniProxy > 1.2 ? 'Dispersed' : 'Near Random'}
+                        </span>
+                      </div>
+                      {/* NNI scale bar */}
+                      <div style={{ marginTop:10, position:'relative', height:6, background:'linear-gradient(90deg,#0071e3,var(--green),#e53e3e)', borderRadius:3, overflow:'visible' }}>
+                        <div style={{
+                          position:'absolute', top:-2, width:10, height:10,
+                          borderRadius:'50%', background:'#fff', border:'2px solid #1d1d1f',
+                          left:`${Math.min(Math.max(((nniProxy)/2)*100, 0), 100)}%`,
+                          transform:'translateX(-50%)',
+                        }} />
+                      </div>
+                      <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
+                        <span style={{ fontFamily:'var(--mono)', fontSize:7, color:'#0071e3' }}>0 Clustered</span>
+                        <span style={{ fontFamily:'var(--mono)', fontSize:7, color:'var(--green)' }}>1 Random</span>
+                        <span style={{ fontFamily:'var(--mono)', fontSize:7, color:'#e53e3e' }}>2 Dispersed</span>
+                      </div>
+                    </div>
+
+                    {/* Spatial Entropy */}
+                    <div style={{ background:'#fff', border:'1px solid rgba(0,0,0,0.07)', borderRadius:16, padding:16 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                        <div style={{ width:14, height:1.5, background:'#8e44ad', borderRadius:1 }} />
+                        <span style={{ fontFamily:'var(--mono)', fontSize:9, fontWeight:600, letterSpacing:'.18em', textTransform:'uppercase', color:'#8e44ad' }}>Entropy H′</span>
+                      </div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:36, fontWeight:900, letterSpacing:'-.04em', color:'#8e44ad', lineHeight:1 }}>
+                        {spatEntropy.toFixed(3)}
+                      </div>
+                      <div style={{ fontFamily:'var(--mono)', fontSize:9, color:'var(--sub)', marginTop:6, lineHeight:1.6 }}>
+                        Shannon spatial entropy<br/>
+                        <span style={{ color:'#8e44ad', fontWeight:600 }}>{(normEntropy*100).toFixed(0)}% of max entropy</span>
+                      </div>
+                      {/* Entropy bar */}
+                      <div style={{ marginTop:10, height:6, background:'rgba(0,0,0,0.06)', borderRadius:3, overflow:'hidden' }}>
+                        <div style={{ height:'100%', width:`${normEntropy*100}%`, background:'linear-gradient(90deg,#8e44ad,#bf5af2)', borderRadius:3 }} />
+                      </div>
+                      <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
+                        <span style={{ fontFamily:'var(--mono)', fontSize:7, color:'var(--sub)' }}>0 Concentrated</span>
+                        <span style={{ fontFamily:'var(--mono)', fontSize:7, color:'#8e44ad' }}>1.0 Uniform</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quadrant pie */}
+                  <ChartCard title="Quadrant Distribution (relative to centroid)" sub="N/S × E/W quadrant panel counts" color="var(--blue)">
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                      <div style={{ height:130 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={quadrants} dataKey="count" cx="50%" cy="50%" innerRadius={32} outerRadius={56} paddingAngle={2}>
+                              {quadrants.map((q,i) => <Cell key={i} fill={q.fill} />)}
+                            </Pie>
+                            <Tooltip {...TT} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div style={{ display:'flex', flexDirection:'column', gap:8, justifyContent:'center' }}>
+                        {quadrants.map(q => (
+                          <div key={q.name} style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                              <div style={{ width:8, height:8, borderRadius:'50%', background:q.fill }} />
+                              <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--sub)' }}>{q.name}</span>
+                            </div>
+                            <span style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:800, color:q.fill }}>{q.count}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </ChartCard>
                 </div>
@@ -918,7 +1445,7 @@ export default function SolarWebGIS() {
                 <div className="tab-content" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
                   {/* OLS Regression */}
-                  <ChartCard title="OLS Regression — Area → Annual Energy Yield" sub={`β̂ = ${betaAreaEnergy.toFixed(3)} kWh/m²/yr  |  Model: Ŷ = ${betaAreaEnergy.toFixed(2)}X`} color="var(--green)">
+                  <ChartCard title="OLS Regression — Area → Annual Energy Yield" sub={`β̂ = ${betaAreaEnergy.toFixed(3)} kWh/m²/yr  |  R² = ${rSquared.toFixed(3)}  |  Ŷ = ${betaAreaEnergy.toFixed(2)}X`} color="var(--green)">
                     <div style={{ height: 160 }}>
                       <ResponsiveContainer width="100%" height="100%">
                         <ComposedChart margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
@@ -971,10 +1498,80 @@ export default function SolarWebGIS() {
                       );
                     })}
                   </ChartCard>
+
+                  {/* Residual plot */}
+                  <ChartCard title="OLS Residual Plot" sub="Residual = Observed − Ŷ. Random scatter around 0 = good model fit." color="var(--green)">
+                    <div style={{ height: 130 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ScatterChart margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
+                          <XAxis type="number" dataKey="x" name="Fitted Ŷ" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} fontFamily="var(--mono)" />
+                          <YAxis type="number" dataKey="y" name="Residual" stroke="#b0b0b0" fontSize={9} tickLine={false} axisLine={false} />
+                          <ReferenceLine y={0} stroke="var(--green)" strokeDasharray="4 2" strokeWidth={1.5} />
+                          <Tooltip {...TT} />
+                          <Scatter
+                            data={visiblePanels.map(p => ({
+                              x: parseFloat((betaAreaEnergy * p.area_sqm).toFixed(1)),
+                              y: parseFloat((p.yearly_energy_kwh - betaAreaEnergy * p.area_sqm).toFixed(1)),
+                            }))}
+                            fill="#0071e3" opacity={0.6}
+                          />
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </ChartCard>
+
+                  {/* Z-score outlier table */}
+                  <ChartCard title="Z-Score Outlier Table (by Panel Area)" sub="|z| > 2.0 = statistical outlier. Sorted by |z| descending." color="#e53e3e">
+                    {zScoreData.slice(0, 8).map((p, i) => (
+                      <div key={i} style={{
+                        display:'flex', alignItems:'center', gap:10, padding:'7px 0',
+                        borderBottom:'1px solid rgba(0,0,0,0.04)',
+                      }}>
+                        <div style={{
+                          width:8, height:8, borderRadius:'50%', flexShrink:0,
+                          background: Math.abs(p.z) > 2 ? '#e53e3e' : Math.abs(p.z) > 1 ? '#ff9f0a' : 'var(--green)',
+                        }}/>
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--ink)' }}>
+                            Panel #{p.id} — {p.area.toFixed(1)} m²
+                          </div>
+                          <div style={{ height:3, background:'rgba(0,0,0,0.06)', borderRadius:2, marginTop:3, overflow:'hidden' }}>
+                            <div style={{
+                              height:'100%',
+                              width:`${Math.min(Math.abs(p.z)/3*100, 100)}%`,
+                              background: Math.abs(p.z) > 2 ? '#e53e3e' : Math.abs(p.z) > 1 ? '#ff9f0a' : 'var(--green)',
+                              borderRadius:2,
+                            }}/>
+                          </div>
+                        </div>
+                        <span style={{
+                          fontFamily:'var(--mono)', fontSize:10, fontWeight:600, flexShrink:0,
+                          color: Math.abs(p.z) > 2 ? '#e53e3e' : Math.abs(p.z) > 1 ? '#d48806' : 'var(--green)',
+                        }}>
+                          z = {p.z > 0 ? '+' : ''}{p.z.toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                    {!n && <div style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--sub)', textAlign:'center', padding:'16px 0' }}>No data</div>}
+                  </ChartCard>
+
+                  {/* DS summary stats row */}
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
+                    {[
+                      { l:'R² (OLS)',    v:rSquared.toFixed(3),   c:'var(--green)', sub:'model fit' },
+                      { l:'CV (σ/μ)',   v:`${cvArea.toFixed(1)}%`,c:'var(--blue)',  sub:'area dispersion' },
+                      { l:'Skewness',   v:skewArea.toFixed(2),    c:'#8e44ad',      sub: skewArea>0?'right tail':'left tail' },
+                    ].map(s => (
+                      <div key={s.l} style={{ padding:'12px', background:'#fff', border:'1px solid rgba(0,0,0,0.08)', borderRadius:14 }}>
+                        <div style={{ fontFamily:'var(--mono)', fontSize:8, color:'var(--sub)', letterSpacing:'.14em', textTransform:'uppercase', marginBottom:6 }}>{s.l}</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:900, letterSpacing:'-.03em', color:s.c, lineHeight:1 }}>{s.v}</div>
+                        <div style={{ fontFamily:'var(--mono)', fontSize:8, color:'#a0a0a0', marginTop:4 }}>{s.sub}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
-
-              {/* ══ DIP LAB ════════════════════════════════ */}
               {activeTab === 'dip' && (
                 <div className="tab-content" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
