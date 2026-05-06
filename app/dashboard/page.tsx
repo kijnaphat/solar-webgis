@@ -130,7 +130,83 @@ export default function SolarWebGIS() {
   const [activeLayers, setActiveLayers] = useState({ heatmap: false, stringWiring: true, priority: false });
   const [irradiance, setIrradiance]     = useState(850);
   const [leftOpen, setLeftOpen]         = useState(true);
+  const [lang, setLang]                 = useState<'en'|'th'>('en');
   const fileRef = useRef<HTMLInputElement>(null);
+
+  /* ── Translations — every value is a plain string, no T.* self-refs ─ */
+  const isEn = lang === 'en';
+  const T = {
+    langBtn:          isEn ? '🇹🇭 ภาษาไทย'                : '🇬🇧 English',
+    homeBtn:          isEn ? 'Home'                         : 'หน้าหลัก',
+    systemOnline:     isEn ? 'SYSTEM ONLINE'                : 'ระบบออนไลน์',
+    irradianceLabel:  isEn ? 'IRRADIANCE'                : 'ความเข้มแสง',
+    refreshTitle:     isEn ? 'Refresh data'                 : 'รีเฟรชข้อมูล',
+    editBtn:          isEn ? 'Edit'                         : 'แก้ไข',
+    exitEditBtn:      isEn ? 'Exit Edit'                    : 'ออก',
+    geojsonBtn:       isEn ? 'GeoJSON'                      : 'GeoJSON',
+    gradeAwait:       isEn ? 'Awaiting Data'                : 'รอข้อมูล',
+    gradeA:           isEn ? 'Highly Suitable'              : 'เหมาะสมสูงมาก',
+    gradeB:           isEn ? 'Moderate'                     : 'ปานกลาง',
+    gradeC:           isEn ? 'Low Potential'                : 'ศักยภาพต่ำ',
+    aiPipeline:       isEn ? 'AI Pipeline'                  : 'AI Pipeline',
+    uploadSub:        isEn ? 'Upload · Process · Analyse'   : 'อัปโหลด · ประมวล · วิเคราะห์',
+    dropZone:         isEn ? 'Drop GeoTIFF / PNG / JPG'     : 'วาง GeoTIFF / PNG / JPG',
+    dropHint:         isEn ? '.tif · .jpg · .png'           : '.tif · .jpg · .png',
+    scanMsg:          isEn ? 'Processing…'                  : 'กำลังประมวลผล…',
+    runPipeline:      isEn ? 'Run Pipeline'                 : 'รันไปป์ไลน์',
+    gisLayers:        isEn ? 'GIS Layers'                   : 'เลเยอร์ GIS',
+    baseMapLabel:     isEn ? 'Base Map'                     : 'แผนที่พื้นหลัง',
+    stringWiring:     isEn ? 'String Wiring'                : 'เดินสายไฟ',
+    stringWiringSub:  isEn ? 'Inverter path routing'        : 'เส้นทาง Inverter',
+    priorityZoning:   isEn ? 'Priority Zoning'              : 'โซนลำดับความสำคัญ',
+    priorityZoningSub:isEn ? 'Investment phases'            : 'ระยะการลงทุน',
+    areaHeatmap:      isEn ? 'Area Heatmap'                 : 'ฮีทแมปพื้นที่',
+    areaHeatmapSub:   isEn ? 'Panel size intensity'         : 'ความเข้มขนาดแผง',
+    highClustering:   isEn ? 'High Clustering'              : 'คลัสเตอร์สูง',
+    siteIndex:        isEn ? 'Site Suitability Index'       : 'ดัชนีความเหมาะสม',
+    editDetect:       isEn ? 'Edit Detections'              : 'แก้ไขการตรวจจับ',
+    correctAI:        isEn ? 'Correct AI errors'            : 'แก้ไขข้อผิดพลาด AI',
+    deleteHint:       isEn ? 'Panels are red on map. Click any to remove as false-positive.'
+                            : 'แผงสีแดงบนแผนที่ คลิกเพื่อลบ false-positive',
+    drawHint:         isEn ? 'Click map to add vertices. Use toolbar to Finish or Cancel.'
+                            : 'คลิกแผนที่เพื่อเพิ่มจุด แล้วกด Finish หรือ Cancel',
+    drawNewPanel:     isEn ? 'Draw New Panel'               : 'วาดแผงใหม่',
+    undoBtn:          isEn ? 'Undo'                         : 'เลิกทำ',
+    exportBtn:        isEn ? 'Export'                       : 'ส่งออก',
+    manualPanels:     isEn ? 'Manual Panels'                : 'แผงที่วาดเอง',
+    resetEdits:       isEn ? '↺ Reset all edits'           : '↺ รีเซ็ตการแก้ไข',
+    tabOverview:      isEn ? 'Overview'                     : 'ภาพรวม',
+    tabGeoStat:       isEn ? 'Geo Stats'                    : 'สถิติพื้นที่',
+    tabSpatial:       isEn ? 'Spatial'                      : 'เชิงพื้นที่',
+    tabClustering:    isEn ? 'Clustering'                   : 'คลัสเตอร์',
+    tabDataSci:       isEn ? 'Data Sci'                     : 'วิทยาการข้อมูล',
+    tabDIP:           isEn ? 'DIP Lab'                      : 'ห้อง DIP',
+    tabFinance:       isEn ? 'Finance'                      : 'การเงิน',
+    tabGeoLogs:       isEn ? 'Geo Logs'                     : 'บันทึก Geo',
+    kpiPanels:        isEn ? 'AI Panels (active)'           : 'แผง AI (ทำงาน)',
+    kpiArea:          isEn ? 'Usable Area'                  : 'พื้นที่ใช้งาน',
+    kpiCo2:           isEn ? 'CO₂ Offset'                   : 'ลด CO₂',
+    kpiConf:          isEn ? 'Avg Confidence'               : 'ความมั่นใจเฉลี่ย',
+    kpiAllActive:     isEn ? 'all active'                   : 'ทั้งหมดทำงาน',
+    kpiDeleted:       isEn ? 'deleted'                      : 'ลบแล้ว',
+    kpiTotalMapped:   isEn ? 'Total mapped'                 : 'ทั้งหมดที่แมป',
+    kpiPerYear:       isEn ? 'Per year'                     : 'ต่อปี',
+    kpiCertainty:     isEn ? 'AI certainty'                 : 'ความแน่นอน AI',
+    annualRoi:        isEn ? 'Estimated Annual ROI'         : 'ROI รายปีโดยประมาณ',
+    energyYield:      isEn ? 'Energy Yield'                 : 'ผลผลิตพลังงาน',
+    systemSize:       isEn ? 'System Size'                  : 'ขนาดระบบ',
+    treesEquiv:       isEn ? 'Trees Equiv.'                 : 'เทียบต้นไม้',
+    dailyChart:       isEn ? 'Daily Generation + Irradiance': 'การผลิตรายวัน + ความเข้มแสง',
+    investPhases:     isEn ? 'Investment Priority Phases'   : 'ระยะลำดับความสำคัญ',
+    phase1:           isEn ? 'Phase 1 — Invest Now'         : 'ระยะ 1 — ลงทุนได้เลย',
+    phase2:           isEn ? 'Phase 2 — Plan Ahead'         : 'ระยะ 2 — วางแผนล่วงหน้า',
+    phase3:           isEn ? 'Phase 3 — Re-evaluate'        : 'ระยะ 3 — ประเมินใหม่',
+    liveFeed:         isEn ? 'Live Spatial Feed'            : 'ฟีดเชิงพื้นที่สด',
+    noLogs:           isEn ? 'NO SPATIAL LOGS DETECTED'     : 'ไม่พบบันทึกเชิงพื้นที่',
+    uploadToBegin:    isEn ? 'Upload a GeoTIFF to begin analysis' : 'อัปโหลด GeoTIFF เพื่อเริ่มวิเคราะห์',
+    noData:           isEn ? 'No data'                      : 'ไม่มีข้อมูล',
+    panelsUnit:       isEn ? 'panels'                       : 'แผง',
+  };
 
   /* ── Edit-detection state ───────────────────────────── */
   const [deletedIds,  setDeletedIds]  = useState<Set<string|number>>(new Set());
@@ -270,10 +346,10 @@ export default function SolarWebGIS() {
 
   /* ── Grade ──────────────────────────────────────────── */
   const grade = (() => {
-    if (!n) return { g: '—', c: '#6e6e73', desc: 'Awaiting Data', bg: 'rgba(110,110,115,0.07)' };
-    if (avgConf >= 0.5 && totalArea > 30) return { g: 'A+', c: '#1d8348', desc: 'Highly Suitable', bg: 'rgba(29,131,72,0.07)' };
-    if (avgConf >= 0.4 && totalArea > 15) return { g: 'B',  c: '#0071e3', desc: 'Moderate',        bg: 'rgba(0,113,227,0.07)'  };
-    return { g: 'C', c: '#d48806', desc: 'Low Potential', bg: 'rgba(212,136,6,0.07)' };
+    if (!n) return { g: '—', c: '#6e6e73', desc: T.gradeAwait, bg: 'rgba(110,110,115,0.07)' };
+    if (avgConf >= 0.5 && totalArea > 30) return { g: 'A+', c: '#1d8348', desc: T.gradeA, bg: 'rgba(29,131,72,0.07)' };
+    if (avgConf >= 0.4 && totalArea > 15) return { g: 'B',  c: '#0071e3', desc: T.gradeB, bg: 'rgba(0,113,227,0.07)'  };
+    return { g: 'C', c: '#d48806', desc: T.gradeC, bg: 'rgba(212,136,6,0.07)' };
   })();
 
   /* ── Chart data ─────────────────────────────────────── */
@@ -562,7 +638,7 @@ export default function SolarWebGIS() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <PingDot />
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--green)', letterSpacing: '.1em' }}>SYSTEM ONLINE</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--green)', letterSpacing: '.1em' }}>{T.systemOnline}</span>
             </div>
             <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
             <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)', letterSpacing: '.1em' }}>YOLOv8-SEG + U-NET</span>
@@ -570,12 +646,12 @@ export default function SolarWebGIS() {
             <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)', letterSpacing: '.1em' }}>EPSG:4326/32647</span>
             <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 980, background: 'rgba(255,159,10,0.09)', border: '1px solid rgba(255,159,10,0.2)' }}>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#d48806', letterSpacing: '.1em' }}>IRRADIANCE</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#d48806', letterSpacing: '.1em' }}>{T.irradianceLabel}</span>
               <span style={{ fontFamily: 'var(--display)', fontSize: 15, fontWeight: 800, color: '#ff9f0a', letterSpacing: '-.015em' }}>{irradiance} W/m²</span>
             </div>
           </div>
 
-          {/* Right: grade + edit + export */}
+          {/* Right: grade + lang + edit + export */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {n > 0 && (
               <div style={{ padding: '5px 14px', borderRadius: 980, background: grade.bg, border: `1px solid ${grade.c}22` }}>
@@ -583,6 +659,22 @@ export default function SolarWebGIS() {
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: grade.c, marginLeft: 6, letterSpacing: '.1em' }}>{grade.desc}</span>
               </div>
             )}
+            {/* Language switcher */}
+            <button
+              onClick={() => setLang(l => l === 'en' ? 'th' : 'en')}
+              title={isEn ? 'Switch to Thai' : 'เปลี่ยนเป็นภาษาอังกฤษ'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 13px', borderRadius: 980,
+                background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.1)',
+                cursor: 'pointer', color: 'var(--ink)',
+                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600,
+                transition: 'all .18s',
+              }}
+            >
+              <span style={{ fontSize: 15, lineHeight: 1 }}>{isEn ? '🇹🇭' : '🇬🇧'}</span>
+              {T.langBtn}
+            </button>
             {/* Edit detections toggle */}
             <button
               onClick={toggleEdit}
@@ -601,7 +693,7 @@ export default function SolarWebGIS() {
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
               </svg>
-              {editMode ? 'Exit Edit' : 'Edit'}
+              {editMode ? T.exitEditBtn : T.editBtn}
               {(deletedIds.size > 0 || drawnPanels.length > 0) && !editMode && (
                 <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: '#e53e3e', border: '2px solid #fff' }} />
               )}
@@ -609,7 +701,7 @@ export default function SolarWebGIS() {
             {/* Refresh button */}
             <button
               onClick={() => fetchData()}
-              title="Refresh data from database"
+              title={T.refreshTitle}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: 34, height: 34, borderRadius: 980,
@@ -628,7 +720,7 @@ export default function SolarWebGIS() {
               background: 'rgba(0,113,227,0.08)', border: '1px solid rgba(0,113,227,0.2)',
               cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--blue)',
             }}>
-              <DownloadCloud style={{ width: 12, height: 12 }} />GeoJSON
+              <DownloadCloud style={{ width: 12, height: 12 }} />{T.geojsonBtn}
             </button>
           </div>
         </header>
@@ -720,8 +812,8 @@ export default function SolarWebGIS() {
                       <Target style={{ width: 16, height: 16, color: '#fff' }} />
                     </div>
                     <div>
-                      <div style={{ fontFamily: 'var(--display)', fontSize: 14, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--ink)' }}>AI Pipeline</div>
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.14em', textTransform: 'uppercase' }}>Upload · Process · Analyse</div>
+                      <div style={{ fontFamily: 'var(--display)', fontSize: 14, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--ink)' }}>{T.aiPipeline}</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.14em', textTransform: 'uppercase' }}>{T.uploadSub}</div>
                     </div>
                   </div>
 
@@ -734,9 +826,9 @@ export default function SolarWebGIS() {
                   }}>
                     <UploadCloud style={{ width: 20, height: 20, color: file ? 'var(--blue)' : 'var(--sub)', margin: '0 auto 6px' }} />
                     <div style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, color: file ? 'var(--blue)' : 'var(--sub)' }}>
-                      {file ? file.name : 'Drop GeoTIFF / PNG / JPG'}
+                      {file ? file.name : T.dropZone}
                     </div>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#b0b0b0', marginTop: 3 }}>.tif · .jpg · .png</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#b0b0b0', marginTop: 3 }}>{T.dropHint}</div>
                     <input ref={fileRef} type="file" accept=".tif,.jpg,.png" style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] || null)} />
                   </div>
 
@@ -744,7 +836,7 @@ export default function SolarWebGIS() {
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--blue)' }}>{Math.round(uploadPct)}%</span>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)' }}>Processing…</span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)' }}>{T.scanMsg}</span>
                       </div>
                       <div style={{ height: 3, background: 'rgba(0,0,0,0.07)', borderRadius: 2, overflow: 'hidden', marginBottom: 10 }}>
                         <div style={{ height: '100%', width: `${uploadPct}%`, background: 'var(--blue)', borderRadius: 2, transition: 'width .3s' }} />
@@ -764,7 +856,7 @@ export default function SolarWebGIS() {
                       fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
                       opacity: isUploading || !file ? .4 : 1, transition: 'all .2s',
                     }}>
-                      {isUploading ? <><Cpu style={{ width: 13, height: 13, animation: 'spinSlow 1s linear infinite' }} />Processing…</> : <><Zap style={{ width: 13, height: 13 }} />Run Pipeline</>}
+                      {isUploading ? <><Cpu style={{ width: 13, height: 13, animation: 'spinSlow 1s linear infinite' }} />{T.scanMsg}</> : <><Zap style={{ width: 13, height: 13 }} />{T.runPipeline}</>}
                     </button>
                     <button onClick={handleClear} style={{
                       padding: '11px 13px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.09)',
@@ -780,14 +872,14 @@ export default function SolarWebGIS() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ width: 14, height: 1.5, background: 'var(--blue)', borderRadius: 1 }} />
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--blue)' }}>GIS Layers</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--blue)' }}>{T.gisLayers}</span>
                     </div>
                     <Lozenge color="var(--blue)">EPSG:32647</Lozenge>
                   </div>
 
                   {/* Base map */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)' }}>Base Map</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)' }}>{T.baseMapLabel}</span>
                     <div style={{ display: 'flex', gap: 2, padding: 2, background: 'rgba(0,0,0,0.05)', borderRadius: 8 }}>
                       {['satellite', 'dark', 'street'].map(m => (
                         <button key={m} onClick={() => setBaseMap(m)} style={{
@@ -802,9 +894,9 @@ export default function SolarWebGIS() {
                   </div>
 
                   {[
-                    { key: 'stringWiring', label: 'String Wiring',   sub: 'Inverter path routing', color: 'var(--blue)',  icon: <Cable      style={{ width: 12, height: 12 }} /> },
-                    { key: 'priority',     label: 'Priority Zoning', sub: 'Investment phases',      color: 'var(--green)', icon: <ListChecks style={{ width: 12, height: 12 }} /> },
-                    { key: 'heatmap',      label: 'Area Heatmap',    sub: 'Panel size intensity',   color: '#8e44ad',      icon: <CloudSun   style={{ width: 12, height: 12 }} /> },
+                    { key: 'stringWiring', label: T.stringWiring,   sub: T.stringWiringSub, color: 'var(--blue)',  icon: <Cable      style={{ width: 12, height: 12 }} /> },
+                    { key: 'priority',     label: T.priorityZoning, sub: T.priorityZoningSub,      color: 'var(--green)', icon: <ListChecks style={{ width: 12, height: 12 }} /> },
+                    { key: 'heatmap',      label: T.areaHeatmap,    sub: T.areaHeatmapSub,   color: '#8e44ad',      icon: <CloudSun   style={{ width: 12, height: 12 }} /> },
                   ].map(({ key, label, sub, color, icon }) => (
                     <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -832,7 +924,7 @@ export default function SolarWebGIS() {
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: grade.c, letterSpacing: '.12em' }}>GRADE</span>
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 4 }}>Site Suitability Index</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 4 }}>{T.siteIndex}</div>
                       <div style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: grade.c }}>{grade.desc}</div>
                       <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sub)', marginTop: 3 }}>n={n} panels · {totalArea.toFixed(1)} m²</div>
                     </div>
@@ -855,9 +947,9 @@ export default function SolarWebGIS() {
                         </svg>
                       </div>
                       <div>
-                        <div style={{ fontFamily: 'var(--display)', fontSize: 13, fontWeight: 800, color: editMode ? '#c53030' : 'var(--ink)', lineHeight: 1 }}>Edit Detections</div>
+                        <div style={{ fontFamily: 'var(--display)', fontSize: 13, fontWeight: 800, color: editMode ? '#c53030' : 'var(--ink)', lineHeight: 1 }}>{T.editDetect}</div>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.1em', textTransform: 'uppercase', marginTop: 3 }}>
-                          {editMode ? (drawMode ? 'DRAW MODE' : 'DELETE MODE') : 'Correct AI errors'}
+                          {editMode ? (drawMode ? 'DRAW MODE' : 'DELETE MODE') : T.correctAI}
                         </div>
                       </div>
                     </div>
@@ -921,7 +1013,7 @@ export default function SolarWebGIS() {
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
                         </svg>
-                        {drawMode ? '✏ Drawing… click map to add points' : 'Draw New Panel'}
+                        {drawMode ? '✏ Drawing… click map to add points' : T.drawNewPanel}
                       </button>
 
                       {/* Undo + Export */}
@@ -965,7 +1057,7 @@ export default function SolarWebGIS() {
                       {/* Manual panels list */}
                       {drawnPanels.length > 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.14em', textTransform: 'uppercase' }}>Manual Panels</div>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.14em', textTransform: 'uppercase' }}>{T.manualPanels}</div>
                           {drawnPanels.map((p, i) => (
                             <div key={p.id} style={{ padding: '8px 10px', background: 'rgba(29,131,72,0.05)', border: '1px solid rgba(29,131,72,0.15)', borderRadius: 10 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
@@ -1066,12 +1158,12 @@ export default function SolarWebGIS() {
 
                   {/* ROI hero */}
                   <div style={{ background: 'linear-gradient(135deg,rgba(29,131,72,0.07),rgba(0,113,227,0.05))', border: '1px solid rgba(29,131,72,0.15)', borderRadius: 16, padding: 20 }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 6 }}>Estimated Annual ROI</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--green)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 6 }}>{T.annualRoi}</div>
                     <div style={{ fontFamily: 'var(--display)', fontSize: 44, fontWeight: 900, letterSpacing: '-.04em', color: 'var(--green)', lineHeight: 1 }}>
                       ฿{totalSavings.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </div>
                     <div style={{ display: 'flex', gap: 20, marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(29,131,72,0.1)' }}>
-                      {[['Energy Yield', `${totalEnergy.toLocaleString(undefined, { maximumFractionDigits: 0 })} kWh`], ['System Size', `${systemKw.toFixed(1)} kWp`], ['Trees Equiv.', `${Math.floor(totalCo2 / 21)}`]].map(([l, v]) => (
+                      {[[T.energyYield, `${totalEnergy.toLocaleString(undefined, { maximumFractionDigits: 0 })} kWh`], [T.systemSize, `${systemKw.toFixed(1)} kWp`], [T.treesEquiv, `${Math.floor(totalCo2 / 21)}`]].map(([l, v]) => (
                         <div key={String(l)}>
                           <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--sub)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{l}</div>
                           <div style={{ fontFamily: 'var(--display)', fontSize: 17, fontWeight: 800, color: 'var(--green)', letterSpacing: '-.01em' }}>{v}</div>
@@ -1107,9 +1199,9 @@ export default function SolarWebGIS() {
                   {n > 0 && (
                     <ChartCard title="Investment Priority Phases" color="var(--green)">
                       {[
-                        { label: 'Phase 1 — Invest Now',  count: phase1, color: 'var(--green)' },
-                        { label: 'Phase 2 — Plan Ahead',  count: phase2, color: 'var(--blue)'  },
-                        { label: 'Phase 3 — Re-evaluate', count: phase3, color: '#ff9f0a'      },
+                        { label: T.phase1,  count: phase1, color: 'var(--green)' },
+                        { label: T.phase2,  count: phase2, color: 'var(--blue)'  },
+                        { label: T.phase3, count: phase3, color: '#ff9f0a'      },
                       ].map(p => (
                         <div key={p.label} style={{ marginBottom: 10 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
@@ -1586,7 +1678,7 @@ export default function SolarWebGIS() {
                         </span>
                       </div>
                     ))}
-                    {!n && <div style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--sub)', textAlign:'center', padding:'16px 0' }}>No data</div>}
+                    {!n && <div style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--sub)', textAlign:'center', padding:'16px 0' }}>{T.noData}</div>}
                   </ChartCard>
 
                   {/* DS summary stats row */}
@@ -1743,7 +1835,7 @@ export default function SolarWebGIS() {
                   <ChartCard title="Environmental Impact Summary" color="var(--green)">
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       {[
-                        { icon: <TreePine style={{ width: 16, height: 16 }} />, l: 'Trees Equiv.',  v: Math.floor(totalCo2 / 21),          c: 'var(--green)' },
+                        { icon: <TreePine style={{ width: 16, height: 16 }} />, l: T.treesEquiv,  v: Math.floor(totalCo2 / 21),          c: 'var(--green)' },
                         { icon: <Car      style={{ width: 16, height: 16 }} />, l: 'Cars Removed',  v: (totalCo2 / 4600).toFixed(1),        c: 'var(--blue)'  },
                         { icon: <Wind     style={{ width: 16, height: 16 }} />, l: 'kWh / Year',    v: totalEnergy.toFixed(0),              c: 'var(--green)' },
                         { icon: <DollarSign style={{ width: 16, height: 16 }} />, l: 'CCT Value',  v: `$${cctValue.toFixed(0)}`,           c: '#d48806'      },
@@ -1808,8 +1900,8 @@ export default function SolarWebGIS() {
                   {!n && (
                     <div style={{ textAlign: 'center', padding: '40px 0', border: '1.5px dashed rgba(0,0,0,0.1)', borderRadius: 14, background: 'rgba(0,0,0,0.02)' }}>
                       <Terminal style={{ width: 28, height: 28, color: '#b0b0b0', margin: '0 auto 10px' }} />
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)', letterSpacing: '.12em' }}>NO SPATIAL LOGS DETECTED</div>
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#b0b0b0', marginTop: 5 }}>Upload a GeoTIFF to begin analysis</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--sub)', letterSpacing: '.12em' }}>{T.noLogs}</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#b0b0b0', marginTop: 5 }}>{T.uploadToBegin}</div>
                     </div>
                   )}
                 </div>

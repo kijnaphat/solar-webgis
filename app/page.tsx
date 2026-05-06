@@ -138,6 +138,118 @@ function Faq({ q, a }: { q: string; a: string }) {
 export default function HomePage() {
   const scrollY = useScroll();
   const [hovered, setHovered] = useState<number | null>(null);
+  const [lang, setLang]       = useState<'en' | 'th'>('en');
+  const isEn = lang === 'en';
+
+  /* ── Translation helper ──────────────────────────── */
+  const T = {
+    /* Navbar */
+    navPipeline:   isEn ? 'Pipeline'           : 'ขั้นตอน',
+    navTech:       isEn ? 'Technology'         : 'เทคโนโลยี',
+    navEsg:        isEn ? 'ESG'                : 'ESG',
+    navFaq:        isEn ? 'FAQ'                : 'คำถามที่พบบ่อย',
+    navDashboard:  isEn ? 'Open Dashboard'     : 'เปิดแดชบอร์ด',
+
+    /* Hero */
+    heroEyebrow:   isEn ? 'Geospatial AI Platform — by SWU'
+                        : 'แพลตฟอร์ม GeoAI — โดย มศว',
+    heroH1a:       isEn ? 'Detect every panel.'  : 'ตรวจจับทุกแผง',
+    heroH1b:       isEn ? 'Unlock solar potential.' : 'เปิดศักยภาพพลังงานแสงอาทิตย์',
+    heroParagraph: isEn
+      ? 'Upload a satellite image. Our AI engine detects every rooftop panel, models financial returns, and exports precision GeoJSON — in under 60 seconds.'
+      : 'อัปโหลดภาพถ่ายดาวเทียม AI ของเราตรวจจับแผงโซลาร์บนหลังคาทุกแผง คำนวณผลตอบแทนทางการเงิน และส่งออก GeoJSON ที่แม่นยำ — ภายใน 60 วินาที',
+    heroCta1:      isEn ? 'Explore Interactive Map' : 'เปิดแผนที่โต้ตอบ',
+    heroCta2:      isEn ? 'See how it works'        : 'ดูวิธีการทำงาน',
+    heroScroll:    isEn ? 'Scroll' : 'เลื่อนลง',
+
+    /* Metrics */
+    m1label:       isEn ? 'Panels Detected'  : 'แผงที่ตรวจพบ',
+    m1note:        isEn ? 'and counting'     : 'และเพิ่มขึ้นเรื่อยๆ',
+    m2label:       isEn ? 'Usable Area m²'   : 'พื้นที่ใช้งาน ตร.ม.',
+    m2note:        isEn ? 'total mapped'     : 'ทั้งหมดที่แมปแล้ว',
+    m3label:       isEn ? 'CO₂ Offset kg'    : 'ลด CO₂ กก.',
+    m3note:        isEn ? 'annually'         : 'ต่อปี',
+    m4label:       isEn ? 'AI mAP Accuracy'  : 'ความแม่นยำ AI mAP',
+    m4note:        isEn ? 'YOLOv8 + U-Net'  : 'YOLOv8 + U-Net',
+
+    /* Features */
+    featChip:      isEn ? 'Platform Features'           : 'ฟีเจอร์แพลตฟอร์ม',
+    featH2a:       isEn ? 'Everything you need.'         : 'ครบทุกสิ่งที่ต้องการ',
+    featH2b:       isEn ? "Nothing you don't."           : 'ไม่มีสิ่งที่ไม่จำเป็น',
+    featSub:       isEn
+      ? 'A complete GeoAI stack — from satellite ingest to bankable financial projections.'
+      : 'สแตก GeoAI ที่ครบครัน ตั้งแต่การรับภาพดาวเทียมจนถึงการฉายภาพทางการเงินที่ใช้กับธนาคารได้',
+    f1title:       isEn ? 'YOLOv8 + U-Net Detection'  : 'การตรวจจับ YOLOv8 + U-Net',
+    f1body:        isEn ? 'Instance segmentation on GeoTIFF at 94% mAP@0.5 — rejects skylights, HVAC, and water tanks.'
+                        : 'การแบ่งส่วนแบบ instance บน GeoTIFF ด้วย 94% mAP@0.5 ปฏิเสธ skylight, HVAC และถังน้ำโดยอัตโนมัติ',
+    f2title:       isEn ? 'PostGIS Spatial Engine'    : 'ระบบเชิงพื้นที่ PostGIS',
+    f2body:        isEn ? "EPSG:32647 precision. Moran's I, Ripley's K, NNI clustering — exported as OGC GeoJSON."
+                        : "ความแม่นยำ EPSG:32647 รวม Moran's I, Ripley's K, NNI — ส่งออกเป็น OGC GeoJSON",
+    f3title:       isEn ? 'Carbon Tokens (CCT)'       : 'คาร์บอนโทเค็น (CCT)',
+    f3body:        isEn ? 'Automatically compute CO₂ offset and generate tradeable Carbon Credit Tokens for ESG reporting.'
+                        : 'คำนวณการชดเชย CO₂ โดยอัตโนมัติและสร้าง Carbon Credit Token สำหรับรายงาน ESG',
+    f4title:       isEn ? 'Financial Modelling'       : 'การจำลองทางการเงิน',
+    f4body:        isEn ? '25-year CAPEX, IRR, and break-even projections — updated live as panels are edited.'
+                        : 'ฉายภาพ CAPEX, IRR และจุดคุ้มทุน 25 ปี อัปเดตสดขณะแก้ไขแผง',
+
+    /* Pipeline */
+    pipeChip:      isEn ? 'Pipeline'                     : 'ขั้นตอนการทำงาน',
+    pipeH2a:       isEn ? 'From pixels to profit.'        : 'จากพิกเซลสู่กำไร',
+    pipeH2b:       isEn ? 'In three steps.'               : 'ใน 3 ขั้นตอน',
+    pipeSub:       isEn ? 'A seamless automated pipeline — no manual GIS work required.'
+                        : 'ไปป์ไลน์อัตโนมัติไร้รอยต่อ — ไม่ต้องทำงาน GIS ด้วยมือ',
+    step1title:    isEn ? 'Satellite Image Acquisition'        : 'การรับภาพดาวเทียม',
+    step1body:     isEn ? 'Upload GeoTIFF, PNG, or JPEG. CLAHE and Histogram Equalization remove cloud shadows, balance exposure, and sharpen edges — giving the AI perfect input.'
+                        : 'อัปโหลด GeoTIFF, PNG หรือ JPEG CLAHE และ Histogram Equalization ลบเงาเมฆ ปรับแสง และคมขอบ — ให้ข้อมูล input ที่สมบูรณ์แก่ AI',
+    step2title:    isEn ? 'AI Deep Segmentation'              : 'การแบ่งส่วนเชิงลึกด้วย AI',
+    step2body:     isEn ? 'YOLOv8 + U-Net draws pixel-perfect polygons — rejecting skylights, HVAC, and water tanks. Achieves 94% mAP@0.5 and 0.854 IoU on benchmark datasets.'
+                        : 'YOLOv8 + U-Net วาด polygon ระดับพิกเซล — ปฏิเสธ skylight, HVAC และถังน้ำ บรรลุ 94% mAP@0.5 และ 0.854 IoU บน benchmark',
+    step3title:    isEn ? 'Web GIS & Financial Engineering'    : 'Web GIS และวิศวกรรมทางการเงิน',
+    step3body:     isEn ? 'Data flows into PostGIS. K-Means clusters panels into string inverter groups, simulates wiring, and instantly projects CAPEX, 25-year cash flow, and carbon token value.'
+                        : 'ข้อมูลไหลเข้า PostGIS K-Means จัดกลุ่มแผงเป็นกลุ่ม inverter จำลองสายไฟ และฉายภาพ CAPEX, กระแสเงินสด 25 ปี และมูลค่า carbon token ทันที',
+
+    /* Technology */
+    techChip:      isEn ? 'Technology'                       : 'เทคโนโลยี',
+    techH2:        isEn ? 'Proven geospatial\nscience, industrialised.' : 'วิทยาศาสตร์ภูมิสารสนเทศที่พิสูจน์แล้ว\nนำมาประยุกต์ใช้จริง',
+    techSub:       isEn ? "Every layer of the stack is chosen for spatial precision — from CLAHE image enhancement to EPSG:32647 coordinate math to Moran's I autocorrelation clustering."
+                        : "ทุกเลเยอร์ถูกเลือกเพื่อความแม่นยำเชิงพื้นที่ ตั้งแต่ CLAHE ไปจนถึงคณิตศาสตร์พิกัด EPSG:32647 และ Moran's I clustering",
+    techExplore:   isEn ? 'Explore the platform' : 'สำรวจแพลตฟอร์ม',
+
+    /* ESG / Audience */
+    esgChip:       isEn ? 'ESG Impact'            : 'ผลกระทบ ESG',
+    esgH2:         isEn ? 'Good for the planet.\nGreat for the portfolio.'
+                        : 'ดีต่อโลก\nยอดเยี่ยมสำหรับพอร์ตโฟลิโอ',
+    esgSub:        isEn ? 'Solar panels reduce carbon emissions and generate tradeable credits. GeoAI Vision quantifies every tonne.'
+                        : 'แผงโซลาร์ลดการปล่อยคาร์บอนและสร้างเครดิตที่ซื้อขายได้ GeoAI Vision วัดปริมาณทุกตัน',
+
+    /* Testimonials */
+    testChip:      isEn ? 'Testimonials'           : 'รีวิวจากผู้ใช้',
+    testH2:        isEn ? 'Trusted by energy pioneers.' : 'ไว้วางใจโดยผู้บุกเบิกพลังงาน',
+
+    /* FAQ */
+    faqChip:       isEn ? 'FAQ'                    : 'คำถามที่พบบ่อย',
+    faqH2:         isEn ? 'Questions answered.'    : 'ตอบทุกคำถาม',
+    faqSub:        isEn ? 'Everything you need to know about GeoAI Vision.'
+                        : 'ทุกสิ่งที่คุณต้องการรู้เกี่ยวกับ GeoAI Vision',
+
+    /* CTA section */
+    ctaH2:         isEn ? 'Start mapping solar potential today.'
+                        : 'เริ่มแมปศักยภาพพลังงานแสงอาทิตย์วันนี้',
+    ctaSub:        isEn ? 'Upload your first satellite image free. No credit card required.'
+                        : 'อัปโหลดภาพดาวเทียมแรกฟรี ไม่ต้องใช้บัตรเครดิต',
+    ctaBtn1:       isEn ? 'Open Free Dashboard'    : 'เปิดแดชบอร์ดฟรี',
+    ctaBtn2:       isEn ? 'See the pipeline'       : 'ดูขั้นตอน',
+
+    /* Footer */
+    footerTagline: isEn ? 'Satellite precision meets financial intelligence.'
+                        : 'ความแม่นยำดาวเทียมผสานปัญญาทางการเงิน',
+    footerProduct: isEn ? 'Product'    : 'ผลิตภัณฑ์',
+    footerCompany: isEn ? 'Company'    : 'บริษัท',
+    footerStatus:  isEn ? 'Status'     : 'สถานะ',
+    footerLive:    isEn ? 'Live'       : 'สด',
+    footerCopy:    isEn ? '© 2025 GeoAI Vision by SWU. All rights reserved.'
+                        : '© 2025 GeoAI Vision โดย มศว สงวนลิขสิทธิ์',
+  };
 
   return (
     <>
@@ -269,17 +381,40 @@ export default function HomePage() {
 
           {/* Nav */}
           <nav style={{ display: 'flex', gap: 2 }}>
-            {[['Pipeline','#pipeline'],['Technology','#tech'],['ESG','#esg'],['FAQ','#faq']].map(([l,h]) => (
-              <a key={l} href={h} className="nl">{l}</a>
+            {[
+              [T.navPipeline, '#pipeline'],
+              [T.navTech,     '#tech'],
+              [T.navEsg,      '#esg'],
+              [T.navFaq,      '#faq'],
+            ].map(([l, h]) => (
+              <a key={String(h)} href={String(h)} className="nl">{l}</a>
             ))}
           </nav>
 
           {/* Right */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <LiveBadge />
+            {/* Language switcher */}
+            <button
+              onClick={() => setLang(l => l === 'en' ? 'th' : 'en')}
+              title={isEn ? 'Switch to Thai' : 'เปลี่ยนเป็นภาษาอังกฤษ'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 12px', borderRadius: 980,
+                background: 'rgba(0,0,0,0.04)',
+                border: '1px solid rgba(0,0,0,0.1)',
+                cursor: 'pointer', transition: 'all .18s',
+                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600, color: 'var(--ink)',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.08)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.04)'; }}
+            >
+              <span style={{ fontSize: 16, lineHeight: 1 }}>{isEn ? '🇹🇭' : '🇬🇧'}</span>
+              <span>{isEn ? 'ภาษาไทย' : 'English'}</span>
+            </button>
             <Link href="/dashboard">
               <button className="btn-primary" style={{ padding: '9px 20px', fontSize: 13 }}>
-                Open Dashboard
+                {T.navDashboard}
               </button>
             </Link>
           </div>
@@ -329,7 +464,7 @@ export default function HomePage() {
               background: 'linear-gradient(135deg, #0071e3 0%, #34aadc 50%, #5ac8fa 100%)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
               display: 'inline-block',
-            }}>Unlock solar potential.</span>
+            }}>{T.heroH1b}</span>
           </h1>
 
           {/* Sub */}
@@ -339,8 +474,7 @@ export default function HomePage() {
             animation: 'fadeUp .85s cubic-bezier(.16,1,.3,1) .13s both',
             fontWeight: 400,
           }}>
-            Upload a satellite image. Our AI engine detects every rooftop panel,
-            models financial returns, and exports precision GeoJSON — in under 60 seconds.
+            {T.heroParagraph}
           </p>
 
           {/* CTAs */}
@@ -348,13 +482,13 @@ export default function HomePage() {
             <Link href="/dashboard">
               <button className="btn-primary" style={{ fontSize: 17, padding: '16px 34px' }}>
                 <Map style={{ width: 18, height: 18 }} />
-                Explore Interactive Map
+                {T.heroCta1}
                 <ArrowRight style={{ width: 17, height: 17 }} />
               </button>
             </Link>
             <a href="#pipeline">
               <button className="btn-secondary" style={{ fontSize: 17 }}>
-                See how it works <ChevronRight className="arr" style={{ width: 17, height: 17 }} />
+                {T.heroCta2} <ChevronRight className="arr" style={{ width: 17, height: 17 }} />
               </button>
             </a>
           </div>
@@ -553,10 +687,10 @@ export default function HomePage() {
       <section style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
         <div style={{ maxWidth: 1080, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)' }}>
           {[
-            { to: 1248,  s: '',   label: 'Panels Detected',  note: 'and counting' },
-            { to: 85200, s: '',   label: 'Usable Area m²',   note: 'total mapped' },
-            { to: 85000, s: '',   label: 'CO₂ Offset kg',    note: 'annually' },
-            { to: 94,    s: '%',  label: 'AI mAP Accuracy',  note: 'YOLOv8 + U-Net' },
+            { to: 1248,  s: '',   label: T.m1label, note: T.m1note },
+            { to: 85200, s: '',   label: T.m2label, note: T.m2note },
+            { to: 85000, s: '',   label: T.m3label, note: T.m3note },
+            { to: 94,    s: '%',  label: T.m4label, note: T.m4note },
           ].map((s, i, arr) => (
             <Reveal key={s.label} delay={i * 55}>
               <div style={{
@@ -581,10 +715,10 @@ export default function HomePage() {
             <div style={{ textAlign: 'center', marginBottom: 64 }}>
               <Chip>Platform Features</Chip>
               <h2 style={{ fontFamily: 'var(--display)', fontSize: 'clamp(34px,4vw,52px)', fontWeight: 800, letterSpacing: '-.03em', color: 'var(--ink)', margin: '18px 0 18px' }}>
-                Everything you need.<br />Nothing you don't.
+                {T.featH2a}<br />{T.featH2b}
               </h2>
               <p style={{ fontFamily: 'var(--sans)', fontSize: 18, color: 'var(--sub)', maxWidth: 460, margin: '0 auto', lineHeight: 1.65 }}>
-                A complete GeoAI stack — from satellite ingest to bankable financial projections.
+                {T.featSub}
               </p>
             </div>
           </Reveal>
@@ -717,9 +851,9 @@ export default function HomePage() {
                 }}>
                   <Leaf style={{ width: 24, height: 24, color: '#d48806' }} />
                 </div>
-                <h3 style={{ fontFamily: 'var(--display)', fontSize: 22, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--ink)', marginBottom: 10 }}>Carbon Tokens (CCT)</h3>
+                <h3 style={{ fontFamily: 'var(--display)', fontSize: 22, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--ink)', marginBottom: 10 }}>{T.f3title}</h3>
                 <p style={{ fontFamily: 'var(--sans)', fontSize: 14, color: '#8b6914', lineHeight: 1.65, marginBottom: 16 }}>
-                  Automatically compute CO₂ offset and generate tradeable Carbon Credit Tokens for ESG reporting.
+                  {T.f3body}
                 </p>
                 <div style={{ fontFamily: 'var(--display)', fontSize: 38, fontWeight: 900, letterSpacing: '-.04em', color: '#b8860b' }}>12,750 <span style={{ fontSize: 16, fontWeight: 600 }}>CCT</span></div>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#d48806', letterSpacing: '.1em', marginTop: 3 }}>Est. value: $1,912 USD</div>
@@ -736,10 +870,10 @@ export default function HomePage() {
             <div style={{ textAlign: 'center', marginBottom: 80 }}>
               <Chip>Pipeline</Chip>
               <h2 style={{ fontFamily: 'var(--display)', fontSize: 'clamp(34px,4vw,52px)', fontWeight: 800, letterSpacing: '-.03em', color: 'var(--ink)', margin: '18px 0 18px' }}>
-                From pixels to profit.<br />In three steps.
+                {T.pipeH2a}<br />{T.pipeH2b}
               </h2>
               <p style={{ fontFamily: 'var(--sans)', fontSize: 18, color: 'var(--sub)', maxWidth: 440, margin: '0 auto', lineHeight: 1.65 }}>
-                A seamless automated pipeline — no manual GIS work required.
+                {T.pipeSub}
               </p>
             </div>
           </Reveal>
@@ -747,8 +881,8 @@ export default function HomePage() {
           {[
             {
               n:'01', color:'#0071e3', icon:<Satellite style={{width:22,height:22}}/>,
-              title: 'Satellite Image Acquisition',
-              body: 'Upload GeoTIFF, PNG, or JPEG. CLAHE and Histogram Equalization remove cloud shadows, balance exposure, and sharpen edges — giving the AI perfect input.',
+              title: T.step1title,
+              body: T.step1body,
               tags: ['CLAHE Processing','Multi-band Stacking','10 cm / px'],
               vis: (
                 <div style={{ height:300, background:'#eef0f2', borderRadius:18, border:'1px solid rgba(0,0,0,.07)', overflow:'hidden', position:'relative', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -766,8 +900,8 @@ export default function HomePage() {
             },
             {
               n:'02', color:'#8e44ad', icon:<BrainCircuit style={{width:22,height:22}}/>,
-              title: 'AI Deep Segmentation',
-              body: 'YOLOv8 + U-Net draws pixel-perfect polygons — rejecting skylights, HVAC, and water tanks. Achieves 94% mAP@0.5 and 0.854 IoU on benchmark datasets.',
+              title: T.step2title,
+              body: T.step2body,
               tags: ['Instance Segmentation','94% mAP@0.5','0.854 IoU'],
               vis: (
                 <div style={{ height:300, background:'var(--bg2)', borderRadius:18, border:'1px solid rgba(0,0,0,.07)', overflow:'hidden', padding:24, display:'flex', flexDirection:'column' }}>
@@ -798,8 +932,8 @@ export default function HomePage() {
             },
             {
               n:'03', color:'var(--green)', icon:<BarChart3 style={{width:22,height:22}}/>,
-              title: 'Web GIS & Financial Engineering',
-              body: 'Data flows into PostGIS. K-Means clusters panels into string inverter groups, simulates wiring, and instantly projects CAPEX, 25-year cash flow, and carbon token value.',
+              title: T.step3title,
+              body: T.step3body,
               tags: ['K-Means Clustering','25-Year Projection','Carbon Tokens'],
               vis: (
                 <div style={{ height:300, background:'var(--bg2)', borderRadius:18, border:'1px solid rgba(0,0,0,.07)', overflow:'hidden', padding:24, display:'flex', flexDirection:'column', gap:14 }}>
@@ -869,14 +1003,14 @@ export default function HomePage() {
               <div>
                 <Chip color="#5ac8fa" bg="rgba(90,200,250,.1)">Technology</Chip>
                 <h2 style={{ fontFamily:'var(--display)', fontSize:'clamp(34px,4vw,50px)', fontWeight:800, letterSpacing:'-.03em', color:'#f5f5f7', margin:'18px 0 18px', lineHeight:1.1 }}>
-                  Proven geospatial<br />science, industrialised.
+                  {T.techH2.split('\n').map((line, i) => <span key={i}>{line}{i === 0 && <br />}</span>)}
                 </h2>
                 <p style={{ fontFamily:'var(--sans)', fontSize:17, color:'#86868b', lineHeight:1.7, marginBottom:32 }}>
-                  Every layer of the stack is chosen for spatial precision — from CLAHE image enhancement to EPSG:32647 coordinate math to Moran's I autocorrelation clustering.
+                  {T.techSub}
                 </p>
                 <Link href="/dashboard">
                   <button className="btn-secondary" style={{ color:'#2997ff' }}>
-                    Explore the platform <ChevronRight className="arr" style={{width:16,height:16}}/>
+                    {T.techExplore} <ChevronRight className="arr" style={{width:16,height:16}}/>
                   </button>
                 </Link>
               </div>
@@ -1057,9 +1191,9 @@ export default function HomePage() {
         <div style={{ maxWidth:1080, margin:'0 auto' }}>
           <Reveal>
             <div style={{ textAlign:'center', marginBottom:60 }}>
-              <Chip color="#ff9f0a" bg="rgba(255,159,10,.08)">Testimonials</Chip>
+              <Chip color="#ff9f0a" bg="rgba(255,159,10,.08)">{T.testChip}</Chip>
               <h2 style={{ fontFamily:'var(--display)', fontSize:'clamp(34px,4vw,52px)', fontWeight:800, letterSpacing:'-.03em', color:'var(--ink)', margin:'18px 0 0' }}>
-                Trusted by Thailand's<br />energy leaders.
+                {T.testH2}
               </h2>
             </div>
           </Reveal>
@@ -1097,19 +1231,25 @@ export default function HomePage() {
         <div style={{ maxWidth:680, margin:'0 auto' }}>
           <Reveal>
             <div style={{ textAlign:'center', marginBottom:60 }}>
-              <Chip>FAQ</Chip>
+              <Chip>{T.faqChip}</Chip>
               <h2 style={{ fontFamily:'var(--display)', fontSize:'clamp(34px,4vw,52px)', fontWeight:800, letterSpacing:'-.03em', color:'var(--ink)', margin:'18px 0 0' }}>
-                Common questions.
+                {T.faqH2}
               </h2>
             </div>
           </Reveal>
-          {[
+          {(isEn ? [
             {q:'What image formats does GeoAI Vision support?',a:'We support GeoTIFF (.tif), PNG, and JPEG at any resolution. The DIP pipeline is optimised for multispectral imagery at 10–50 cm/pixel, though standard RGB works well for initial assessments.'},
             {q:'How accurate is the AI detection engine?',a:'Our YOLOv8 + U-Net architecture achieves 94% mAP@0.5 and 0.854 IoU on our benchmark dataset. False positives — skylights, HVAC units, water tanks — are rejected via multi-stage confidence thresholds.'},
             {q:'Can I export to AutoCAD or QGIS?',a:'Yes. All detected panels export as GeoJSON (EPSG:4326) or Shapefile format, compatible with AutoCAD, QGIS, ArcGIS, and any PostGIS-based system. WKT geometry is available for direct database integration.'},
             {q:'How is the financial ROI calculated?',a:'ROI is modelled using panel area, local irradiance, EGAT tariff rates, system efficiency (0.2 kWp/m²), and annualised maintenance (฿500/kWp/yr) over a 25-year horizon. Break-even is computed via cumulative cash flow.'},
-            {q:"Is this suitable for large industrial estates?",a:"Tested on estates exceeding 200 hectares. Moran's I spatial clustering groups panels into efficient string inverter circuits, reducing design time by up to 70% vs manual surveys."},
-          ].map((f,i)=><Faq key={i} q={f.q} a={f.a}/>)}
+            {q:'Is this suitable for large industrial estates?',a:"Tested on estates exceeding 200 hectares. Moran's I spatial clustering groups panels into efficient string inverter circuits, reducing design time by up to 70% vs manual surveys."},
+          ] : [
+            {q:'รองรับรูปแบบไฟล์ภาพใดบ้าง?',a:'รองรับ GeoTIFF (.tif), PNG และ JPEG ทุกความละเอียด ไปป์ไลน์ DIP ถูกออปติไมซ์สำหรับภาพ multispectral ที่ 10–50 ซม./พิกเซล แม้ RGB มาตรฐานก็ใช้งานได้ดีสำหรับการประเมินเบื้องต้น'},
+            {q:'AI ตรวจจับแม่นยำแค่ไหน?',a:'สถาปัตยกรรม YOLOv8 + U-Net บรรลุ 94% mAP@0.5 และ 0.854 IoU บน benchmark ของเรา False positive — skylights, HVAC, ถังน้ำ — ถูกปฏิเสธผ่านระบบ confidence threshold หลายขั้น'},
+            {q:'ส่งออกไปยัง AutoCAD หรือ QGIS ได้ไหม?',a:'ได้ แผงทั้งหมดส่งออกเป็น GeoJSON (EPSG:4326) หรือ Shapefile ที่รองรับ AutoCAD, QGIS, ArcGIS และระบบ PostGIS ทุกชนิด เรขาคณิต WKT พร้อมสำหรับการผสานฐานข้อมูลโดยตรง'},
+            {q:'คำนวณ ROI ทางการเงินอย่างไร?',a:'ROI ใช้พื้นที่แผง, ความเข้มแสงท้องถิ่น, อัตราค่าไฟ EGAT, ประสิทธิภาพระบบ (0.2 kWp/ตร.ม.) และค่าบำรุงรักษารายปี (฿500/kWp/ปี) ตลอด 25 ปี คำนวณจุดคุ้มทุนจากกระแสเงินสดสะสม'},
+            {q:'เหมาะสำหรับนิคมอุตสาหกรรมขนาดใหญ่ไหม?',a:"Moran's I clustering จัดกลุ่มแผงเป็นวงจร string inverter ที่มีประสิทธิภาพ ลดเวลาออกแบบลงถึง 70% เมื่อเทียบกับการสำรวจแบบ manual"},
+          ]).map((f,i)=><Faq key={i} q={f.q} a={f.a}/>)}
         </div>
       </section>
 
